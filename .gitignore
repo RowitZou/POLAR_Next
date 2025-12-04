@@ -208,6 +208,7 @@ __marimo__/
 
 # outputs
 outputs/
+outputs_old/
 
 # vscode
 .vscode/

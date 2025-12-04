@@ -280,6 +280,51 @@ class DataParallelPPOActor(BasePPOActor):
 
             return entropy, log_probs
 
+    def _forward_ref_micro_batch(
+        self, micro_batch, temperature, calculate_entropy=False
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        仅使用responses计算entropy和logprob，通过处理micro_batch后调用_forward_micro_batch实现
+        
+        Returns:
+            entropy: # (bs, response_len)
+            log_probs: # (bs, response_len)
+        """
+
+        # 从micro_batch中获取responses和原始input_ids（包含prompt+response）
+        responses = micro_batch["responses"]  # shape: (bs, response_len)
+        original_input_ids = micro_batch["input_ids"]  # shape: (bs, prompt_len + response_len)
+        original_attention_mask = micro_batch["attention_mask"] 
+        batch_size, response_len = responses.shape
+
+        # 计算prompt长度：原始input_ids总长度 - response长度
+        total_len = original_input_ids.shape[1]
+        prompt_len = total_len - response_len  # prompt部分的长度
+        
+        # 提取真实的prompt最后一个token（关键修改）
+        # 形状：(bs, 1)，对应prompt的最后一个token
+        prompt_last_token = original_input_ids[:, prompt_len - 1 : prompt_len]  # 切片确保保持维度
+        prompt_last_mask = original_attention_mask[:, prompt_len - 1 : prompt_len]  # (bs, 1)
+
+        # 提取response部分的mask（原始长度response_len）
+        response_mask = original_attention_mask[:, -response_len:]  # (bs, response_len)
+        
+        # 扩展input_ids和attention_mask（长度均为response_len + 1）
+        extended_input_ids = torch.cat([prompt_last_token, responses], dim=1)  # (bs, response_len + 1)
+        ref_attention_mask = torch.cat([prompt_last_mask, response_mask], dim=1)  # (bs, response_len + 1)
+
+        ref_position_ids = torch.arange(response_len + 1, device=self.device_name).unsqueeze(0).repeat(batch_size, 1)
+
+        # 组装新的micro_batch
+        ref_micro_batch = {
+            "responses": responses,
+            "input_ids": extended_input_ids,
+            "attention_mask": ref_attention_mask,
+            "position_ids": ref_position_ids
+        }
+        return self._forward_micro_batch(ref_micro_batch, temperature, calculate_entropy) 
+
+
     def _optimizer_step(self):
         assert self.config.grad_clip is not None
         if self.scaler is not None:
@@ -307,7 +352,7 @@ class DataParallelPPOActor(BasePPOActor):
         return grad_norm
 
     @GPUMemoryLogger(role="dp actor", logger=logger)
-    def compute_log_prob(self, data: DataProto, calculate_entropy=False) -> torch.Tensor:
+    def compute_log_prob(self, data: DataProto, calculate_entropy=False,on_ref=False) -> torch.Tensor:
         """Compute the log probability of the responses given input_ids, attention_mask and position_ids
 
         Args:
@@ -349,9 +394,14 @@ class DataParallelPPOActor(BasePPOActor):
             micro_batch = micro_batch.to(get_device_id())
             model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
             with torch.no_grad():
-                entropy, log_probs = self._forward_micro_batch(
-                    model_inputs, temperature=temperature, calculate_entropy=calculate_entropy
-                )
+                if not on_ref:
+                    entropy, log_probs = self._forward_micro_batch(
+                        model_inputs, temperature=temperature, calculate_entropy=calculate_entropy
+                    )
+                else:
+                    entropy, log_probs = self._forward_ref_micro_batch(
+                        model_inputs, temperature=temperature, calculate_entropy=calculate_entropy
+                    )                    
             log_probs_lst.append(log_probs)
             if calculate_entropy:
                 entropy_lst.append(entropy)
@@ -505,9 +555,10 @@ class DataParallelPPOActor(BasePPOActor):
                         )
                         kl_loss = agg_loss(loss_mat=kld, loss_mask=response_mask, loss_agg_mode=loss_agg_mode)
 
-                        policy_loss = policy_loss + kl_loss * self.config.kl_loss_coef
+                        policy_loss = (1-self.config.kl_loss_coef) * policy_loss + kl_loss * self.config.kl_loss_coef
                         micro_batch_metrics["actor/kl_loss"] = kl_loss.detach().item() * loss_scale_factor
                         micro_batch_metrics["actor/kl_coef"] = self.config.kl_loss_coef
+                        micro_batch_metrics["actor/policy_loss"] = policy_loss.detach().item() * loss_scale_factor
 
                     if self.config.use_dynamic_bsz:
                         # relative to the dynamic bsz

@@ -960,6 +960,7 @@ class RayPPOTrainer:
         to construct the PPO dataflow.
         The light-weight advantage computation is done on the driver process.
         """
+        # 1. 初始化 logger，用于记录训练过程
         from omegaconf import OmegaConf
 
         from verl.utils.tracking import Tracking
@@ -973,11 +974,13 @@ class RayPPOTrainer:
 
         self.global_steps = 0
 
+        # 2. 加载 checkpoint（如果存在）
         # load checkpoint before doing anything
         self._load_checkpoint()
 
         # perform validation before training
         # currently, we only support validation using the reward_function.
+        # 3. 训练前验证（可选）
         if self.val_reward_fn is not None and self.config.trainer.get("val_before_train", True):
             val_metrics = self._validate()
             assert val_metrics, f"{val_metrics=}"
@@ -986,18 +989,22 @@ class RayPPOTrainer:
             if self.config.trainer.get("val_only", False):
                 return
 
+        # 4. 如果配置要求跳过 rollout，这里进行替换（特殊模式）
         if self.config.actor_rollout_ref.rollout.get("skip_rollout", False):
             rollout_skip = RolloutSkip(self.config, self.actor_rollout_wg)
             rollout_skip.wrap_generate_sequences()
 
         # add tqdm
+        # 5. 初始化进度条
         progress_bar = tqdm(total=self.total_training_steps, initial=self.global_steps, desc="Training Progress")
 
         # we start from step 1
+        # 6. 将 global_steps 从 1 开始
         self.global_steps += 1
         last_val_metrics = None
         self.max_steps_duration = 0
 
+        # 7. profiling 配置
         prev_step_profile = False
         curr_step_profile = (
             self.global_steps in self.config.global_profiler.steps
@@ -1006,28 +1013,34 @@ class RayPPOTrainer:
         )
         next_step_profile = False
 
+        # 8. 训练主循环（epoch × batch）
         for epoch in range(self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
                 metrics = {}
                 timing_raw = {}
 
+                # 9. profiling 开始
                 with marked_timer("start_profile", timing_raw):
                     self._start_profiling(
                         not prev_step_profile and curr_step_profile
                         if self.config.global_profiler.profile_continuous_steps
                         else curr_step_profile
                     )
+                # 10. 将 dataloader 的 dict 转换为 DataProto
                 batch: DataProto = DataProto.from_single_dict(batch_dict)
 
                 # add uid to batch
+                # 11. 为 batch 中每条数据添加唯一 uid（用于 advantage 匹配
                 batch.non_tensor_batch["uid"] = np.array(
                     [str(uuid.uuid4()) for _ in range(len(batch.batch))], dtype=object
                 )
 
+                # 12. 构造 rollout 输入 batch
                 gen_batch = self._get_gen_batch(batch)
 
                 # pass global_steps to trace
                 gen_batch.meta_info["global_steps"] = self.global_steps
+                # 13. 多次 rollout（如 n>1）所需的 repeat
                 gen_batch_output = gen_batch.repeat(
                     repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True
                 )
@@ -1035,6 +1048,7 @@ class RayPPOTrainer:
                 is_last_step = self.global_steps >= self.total_training_steps
                 with marked_timer("step", timing_raw):
                     # generate a batch
+                    # 14. 执行 rollout（模型生成动作/回复）
                     with marked_timer("gen", timing_raw, color="red"):
                         if not self.async_rollout_mode:
                             gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch_output)
@@ -1044,12 +1058,14 @@ class RayPPOTrainer:
                         timing_raw.update(gen_batch_output.meta_info["timing"])
                         gen_batch_output.meta_info.pop("timing", None)
 
+                    # 15. REMAX 特殊优势估计：需要 baseline 生成
                     if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
                         if self.reward_fn is None:
                             raise ValueError("A reward_fn is required for REMAX advantage estimation.")
 
                         with marked_timer("gen_max", timing_raw, color="purple"):
                             gen_baseline_batch = deepcopy(gen_batch)
+                            # baseline rollout（不采样）
                             gen_baseline_batch.meta_info["do_sample"] = False
                             if not self.async_rollout_mode:
                                 gen_baseline_output = self.actor_rollout_wg.generate_sequences(gen_baseline_batch)
@@ -1057,6 +1073,7 @@ class RayPPOTrainer:
                                 gen_baseline_output = self.async_rollout_manager.generate_sequences(gen_baseline_batch)
                             batch = batch.union(gen_baseline_output)
                             # compute reward model score on batch
+                            # baseline reward 计算
                             rm_scores = None
                             if self.use_rm and "rm_scores" not in batch.batch.keys():
                                 rm_scores = self.rm_wg.compute_rm_score(batch)
@@ -1073,27 +1090,33 @@ class RayPPOTrainer:
 
                             del rm_scores, gen_baseline_batch, gen_baseline_output
                     # repeat to align with repeated responses in rollout
+                    # 16. 为对齐 rollout n 次，将 batch repeat
                     batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
                     batch = batch.union(gen_batch_output)
 
+                    # 17. 计算 response mask（回复 token 的 mask）
                     if "response_mask" not in batch.batch.keys():
                         batch.batch["response_mask"] = compute_response_mask(batch)
                     # Balance the number of valid tokens across DP ranks.
                     # NOTE: This usually changes the order of data in the `batch`,
                     # which won't affect the advantage calculation (since it's based on uid),
                     # but might affect the loss calculation (due to the change of mini-batching).
+                    # 18. batch 平衡（不同设备 token 数量一致）
                     if self.config.trainer.balance_batch:
                         self._balance_batch(batch, metrics=metrics)
 
                     # compute global_valid tokens
+                    # 19. 统计 token 数量
                     batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
 
+                    # 20. Reward Model + Reward Function 计算 
                     with marked_timer("reward", timing_raw, color="yellow"):
                         # compute reward model score
                         if self.use_rm and "rm_scores" not in batch.batch.keys():
                             reward_tensor = self.rm_wg.compute_rm_score(batch)
                             batch = batch.union(reward_tensor)
 
+                        # 异步模式
                         if self.config.reward_model.launch_reward_fn_async:
                             future_reward = compute_reward_async.remote(
                                 data=batch, config=self.config, tokenizer=self.tokenizer
@@ -1105,9 +1128,11 @@ class RayPPOTrainer:
                     # - Bypass mode: Sets old_log_probs = rollout_log_probs (2 policies: π_rollout, π_θ)
                     # - Decoupled mode: Recomputes old_log_probs as proximal anchor (3 policies: π_rollout, π_old, π_θ)
                     #   Note: π_old computed once per data batch, serves as stable reference during mini-batch updates
+                    # 21. 旧 log_prob（π_old）计算：PPO 关键步骤
                     rollout_corr_config = self.config.algorithm.get("rollout_correction", None)
                     bypass_recomputing_logprobs = rollout_corr_config and rollout_corr_config.get("bypass_mode", False)
                     if bypass_recomputing_logprobs:  # Use `rollout_log_probs`
+                        # bypass 模式：用 rollout 时的 log_prob
                         from verl.trainer.ppo.rollout_corr_helper import apply_rollout_correction
 
                         apply_rollout_correction(
@@ -1136,6 +1161,7 @@ class RayPPOTrainer:
 
                     assert "old_log_probs" in batch.batch, f'"old_log_prob" not in {batch.batch.keys()=}'
 
+                    # 22. reference policy log_prob（KL 控制等用途
                     if self.use_reference_policy:
                         # compute reference log_prob
                         with marked_timer(str(Role.RefPolicy), timing_raw, color="olive"):
@@ -1146,11 +1172,13 @@ class RayPPOTrainer:
                             batch = batch.union(ref_log_prob)
 
                     # compute values
+                    # 23. critic value 计算 
                     if self.use_critic:
                         with marked_timer("values", timing_raw, color="cyan"):
                             values = self.critic_wg.compute_values(batch)
                             batch = batch.union(values)
 
+                    # 24. Advantage（GAE / GRPO / REMAX 等）计算
                     with marked_timer("adv", timing_raw, color="brown"):
                         # we combine with rule-based rm
                         reward_extra_infos_dict: dict[str, list]
@@ -1162,6 +1190,7 @@ class RayPPOTrainer:
                             batch.non_tensor_batch.update({k: np.array(v) for k, v in reward_extra_infos_dict.items()})
 
                         # compute rewards. apply_kl_penalty if available
+                        # KL penalty（如果启用）
                         if self.config.algorithm.use_kl_in_reward:
                             batch, kl_metrics = apply_kl_penalty(
                                 batch, kl_ctrl=self.kl_ctrl_in_reward, kl_penalty=self.config.algorithm.kl_penalty
@@ -1173,6 +1202,7 @@ class RayPPOTrainer:
                         # Compute rollout correction: IS weights, rejection sampling, and metrics
                         # Only runs in decoupled mode (computes once per batch using stable π_old)
                         # In bypass mode, this is skipped - actor computes metrics from evolving π_θ vs π_rollout
+                        # （可选）off-policy 修正（IS / rejection sampling）
                         if (
                             rollout_corr_config is not None
                             and "rollout_log_probs" in batch.batch
@@ -1190,6 +1220,7 @@ class RayPPOTrainer:
                             "norm_adv_by_std_in_grpo", True
                         )  # GRPO adv normalization factor
 
+                        # Advantage 计算主逻辑
                         batch = compute_advantage(
                             batch,
                             adv_estimator=self.config.algorithm.adv_estimator,
@@ -1201,6 +1232,7 @@ class RayPPOTrainer:
                         )
 
                     # update critic
+                    # 25. Critic 更新 
                     if self.use_critic:
                         with marked_timer("update_critic", timing_raw, color="pink"):
                             critic_output = self.critic_wg.update_critic(batch)
@@ -1208,6 +1240,7 @@ class RayPPOTrainer:
                         metrics.update(critic_output_metrics)
 
                     # implement critic warmup
+                    # 26. Actor 更新（PPO policy gradient）
                     if self.config.trainer.critic_warmup <= self.global_steps:
                         # update actor
                         with marked_timer("update_actor", timing_raw, color="red"):
@@ -1217,11 +1250,13 @@ class RayPPOTrainer:
                         metrics.update(actor_output_metrics)
 
                     # Log rollout generations if enabled
+                    # 27. rollout 样本日志保存（可选）
                     rollout_data_dir = self.config.trainer.get("rollout_data_dir", None)
                     if rollout_data_dir:
                         self._log_rollout_data(batch, reward_extra_infos_dict, timing_raw, rollout_data_dir)
 
                 # validate
+                # 28. 验证（按 test_freq 或最后一步）
                 if (
                     self.val_reward_fn is not None
                     and self.config.trainer.test_freq > 0
@@ -1234,6 +1269,7 @@ class RayPPOTrainer:
                     metrics.update(val_metrics)
 
                 # Check if the ESI (Elastic Server Instance)/training plan is close to expiration.
+                # 29. 判断是否需要保存 checkpoint
                 esi_close_to_expiration = should_save_ckpt_esi(
                     max_steps_duration=self.max_steps_duration,
                     redundant_time=self.config.trainer.esi_redundant_time,
@@ -1253,6 +1289,7 @@ class RayPPOTrainer:
                     with marked_timer("save_checkpoint", timing_raw, color="green"):
                         self._save_checkpoint()
 
+                # 30. profiling 结束 
                 with marked_timer("stop_profile", timing_raw):
                     next_step_profile = (
                         self.global_steps + 1 in self.config.global_profiler.steps
@@ -1267,10 +1304,12 @@ class RayPPOTrainer:
                     prev_step_profile = curr_step_profile
                     curr_step_profile = next_step_profile
 
+                # 31. 记录时间最长 step（ESI 用）
                 steps_duration = timing_raw["step"]
                 self.max_steps_duration = max(self.max_steps_duration, steps_duration)
 
                 # training metrics
+                # 32. 记录基础训练指标
                 metrics.update(
                     {
                         "training/global_step": self.global_steps,
@@ -1278,6 +1317,7 @@ class RayPPOTrainer:
                     }
                 )
                 # collect metrics
+                # 33. 记录数据统计、速度、timing 等指标 
                 metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
                 metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
                 # TODO: implement actual tflpo and theoretical tflpo
@@ -1286,15 +1326,19 @@ class RayPPOTrainer:
                 # Note: mismatch metrics (KL, PPL, etc.) are collected at line 1179 after advantage computation
 
                 # this is experimental and may be changed/removed in the future in favor of a general-purpose one
+                # 34. Curriculum Learning（可选）
                 if isinstance(self.train_dataloader.sampler, AbstractCurriculumSampler):
                     self.train_dataloader.sampler.update(batch=batch)
 
                 # TODO: make a canonical logger that supports various backend
+                # 35. 写入日志系统 
                 logger.log(data=metrics, step=self.global_steps)
 
+                # 36. 更新进度条 + global_steps
                 progress_bar.update(1)
                 self.global_steps += 1
 
+                # 37. 如果指定了 Torch 内存 profiler，保存 snapshot 
                 if (
                     hasattr(self.config.actor_rollout_ref.actor, "profiler")
                     and self.config.actor_rollout_ref.actor.profiler.tool == "torch_memory"
@@ -1303,6 +1347,7 @@ class RayPPOTrainer:
                         tag=f"post_update_step{self.global_steps}", sub_dir=f"step{self.global_steps}"
                     )
 
+                # 38. 最后一 step：打印最终验证并退出
                 if is_last_step:
                     pprint(f"Final validation metrics: {last_val_metrics}")
                     progress_bar.close()
@@ -1310,6 +1355,7 @@ class RayPPOTrainer:
 
                 # this is experimental and may be changed/removed in the future
                 # in favor of a general-purpose data buffer pool
+                # 39. Dataset hook：每个 batch 后可执行（可选）
                 if hasattr(self.train_dataset, "on_batch_end"):
                     # The dataset may be changed after each training batch
                     self.train_dataset.on_batch_end(batch=batch)
