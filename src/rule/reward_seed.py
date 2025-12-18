@@ -25,13 +25,18 @@ def remove_boxed(s):
         return None
     if "\\boxed " in s:
         left = "\\boxed "
-        assert s[: len(left)] == left
+        try:
+            assert s[: len(left)] == left
+        except:
+            return None
         return s[len(left):]
 
     left = "\\boxed{"
-
-    assert s[: len(left)] == left
-    assert s[-1] == "}"
+    try:
+        assert s[: len(left)] == left
+        assert s[-1] == "}"
+    except:
+        return None
 
     return s[len(left): -1]
 
@@ -91,6 +96,9 @@ def compute_score_batch(data_sources, solution_strs, ground_truths, extra_infos,
     Returns:
         scores: A list of computed scores for each data source.
     """
+
+    if extra_infos[0]["split"] == "test":
+        return [0. for _ in range(len(solution_strs))]
 
     batch_data = []
     for data_source, solution_str, ground_truth, extra_info in zip(

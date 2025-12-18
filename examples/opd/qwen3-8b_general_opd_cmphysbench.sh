@@ -5,14 +5,14 @@ set -x
 # Parameters from original script
 nodes=2
 train_batch_size=64
-actor_lr=2e-6
+actor_lr=1e-6
 data_name=cmphysbench
-policy_model_name=Qwen3-8B
+policy_model_name=Qwen3-8B_Genral_OPD
 ref_model_name=Qwen3-30B-A3B
 reward_model_name=ZERO
 
 # Model paths
-actor_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR/models/Qwen3-8B
+actor_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/outputs/verl_opd_policy_Qwen3-8B_reward_ZERO_ref_Qwen3-30B-A3B_data_General_lr_1e-6/hf_models/actor_global_step_1000
 ref_path=/mnt/shared-storage-user/large-model-center-share-weights/hf_hub/models--Qwen--Qwen3-30B-A3B/snapshots/ae659febe817e4b3ebd7355f47792725801204c9
 
 # Data paths
@@ -34,8 +34,8 @@ export TORCH_NCCL_ENABLE_MONITORING=0
 
 # ============ Other Configuration ============
 export WANDB_API_KEY=c89518a9cc46b986f6f2ad122a952229a76d1445
-export http_proxy=http://100.100.67.157:1081
-export https_proxy=http://100.100.67.157:1081
+export http_proxy=http://100.100.67.192:1081
+export https_proxy=http://100.100.67.192:1081
 
 # Set wandb to offline mode to prevent online sync
 # export WANDB_MODE=offline

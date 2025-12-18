@@ -2,9 +2,37 @@
 #You only need a "master_convert()"
 from latex2sympy2_extended import *
 from sympy import simplify
-import timeout_decorator
+import signal
+import os
 
 import re
+
+
+def _is_in_distributed_env():
+    """
+    Check if we're running in a distributed environment (Ray, VERL, etc.)
+    where signal-based timeout is unsafe.
+    """
+    # Check for Ray environment variables
+    ray_env_vars = ['RAY_ADDRESS', 'RAY_JOB_ID', 'RAY_RUNTIME_ENV', 'RAY_NODE_TYPE_NAME']
+    for var in ray_env_vars:
+        if os.environ.get(var):
+            return True
+    # Check for common distributed training indicators
+    if os.environ.get('WORLD_SIZE') or os.environ.get('RANK'):
+        return True
+    # Check if imported ray module has been initialized
+    try:
+        import ray
+        if ray.is_initialized():
+            return True
+    except (ImportError, Exception):
+        pass
+    return False
+
+
+# Global flag to disable signal-based timeout
+_DISABLE_SIGNAL_TIMEOUT = _is_in_distributed_env()
 
 def convert_caret_to_derivative(latex_str):
     # Match multiple consecutive ^ after variable names (2 or more)
@@ -847,22 +875,22 @@ def replace_derivative_frac_preserve_frac(expr: str) -> str:
 
     return re.sub(pattern, repl, expr, flags=re.VERBOSE)
 
-@timeout_decorator.timeout(10, timeout_exception=TimeoutError)
-def master_convert_with_timeout(s, t):
-    """Master convert with timeout protection"""
+def master_convert_impl(s, t):
+    """Core implementation of master_convert"""
     s = re.sub(r'~', '', s)
     preprocessed_stage1 = first_pre_process(s, t)
     preprocessed_stage2 = second_pre_process(preprocessed_stage1)
     Sym = latex2sympy(preprocessed_stage2, normalization_config=MyNormalization(), conversion_config=MyConfig())
     return Sym
 
-def master_convert(s,t):
+def master_convert(s, t):
     """
     The only function needed to convert a LaTeX string into a SymPy expression.
 
     Args:
         s (str): The input LaTeX string. It should be a valid LaTeX mathematical expression, 
                  such as equations, fractions, or symbols, and must have balanced brackets.
+        t: Expression type
 
     Returns:
         Sym (Sympy Expression): A SymPy expression representing the mathematical content of the input string.
@@ -870,14 +898,31 @@ def master_convert(s,t):
                                 or evaluation using SymPy's functionality.
 
     Example:
-        >>> master_convert("\\frac{1}{2} + x")
+        >>> master_convert("\\frac{1}{2} + x", "Expression")
         1/2 + x
     """
-    try:    
-        return master_convert_with_timeout(s, t)
-    except TimeoutError:
-        print(f"  -> master_convert timeout for LaTeX: {s[:100]}...")
-        return None
-    except Exception as e:
-        print(f"  -> master_convert error: {e}")
-        return None
+    if _DISABLE_SIGNAL_TIMEOUT:
+        # In distributed environment, run without signal-based timeout
+        try:
+            return master_convert_impl(s, t)
+        except Exception as e:
+            print(f"  -> master_convert error: {e}")
+            return None
+    else:
+        # In safe environment, use signal-based timeout
+        def handler(signum, frame):
+            raise TimeoutError(f"master_convert timeout for LaTeX: {s[:100]}...")
+        
+        old_handler = signal.signal(signal.SIGALRM, handler)
+        signal.alarm(10)
+        try:
+            return master_convert_impl(s, t)
+        except TimeoutError:
+            print(f"  -> master_convert timeout for LaTeX: {s[:100]}...")
+            return None
+        except Exception as e:
+            print(f"  -> master_convert error: {e}")
+            return None
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)

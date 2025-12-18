@@ -8,11 +8,78 @@ from sympy.logic.boolalg import And, Or, Not
 
 import re
 import numpy as np
-import timeout_decorator
+import signal
+import os
+from functools import wraps
 from .extended_zss import ext_distance
 from .latex_pre_process import *
 from sympy.simplify import *
 import pint  # NEW: For physical unit conversion and comparison
+
+
+def is_in_distributed_env():
+    """
+    Check if we're running in a distributed environment (Ray, VERL, etc.)
+    where signal-based timeout is unsafe.
+    """
+    # Check for Ray environment variables
+    ray_env_vars = ['RAY_ADDRESS', 'RAY_JOB_ID', 'RAY_RUNTIME_ENV', 'RAY_NODE_TYPE_NAME']
+    for var in ray_env_vars:
+        if os.environ.get(var):
+            return True
+    # Check for common distributed training indicators
+    if os.environ.get('WORLD_SIZE') or os.environ.get('RANK'):
+        return True
+    # Check if imported ray module has been initialized
+    try:
+        import ray
+        if ray.is_initialized():
+            return True
+    except (ImportError, Exception):
+        pass
+    return False
+
+
+# Global flag to disable signal-based timeout
+_DISABLE_SIGNAL_TIMEOUT = is_in_distributed_env()
+
+
+def run_with_timeout_safe(func, args=(), kwargs=None, timeout_seconds=10, fallback_value=None):
+    """
+    Run a function with timeout in a safe manner.
+    In distributed environments, skip the timeout entirely to avoid crashes.
+    
+    Args:
+        func: Function to run
+        args: Positional arguments
+        kwargs: Keyword arguments  
+        timeout_seconds: Timeout in seconds (ignored in distributed env)
+        fallback_value: Value to return on timeout
+    """
+    if kwargs is None:
+        kwargs = {}
+    
+    if _DISABLE_SIGNAL_TIMEOUT:
+        # In distributed environment, just run without timeout
+        try:
+            return func(*args, **kwargs)
+        except Exception:
+            return fallback_value
+    else:
+        # In safe environment, use signal-based timeout
+        def handler(signum, frame):
+            raise TimeoutError(f"Function {func.__name__} timed out")
+        
+        old_handler = signal.signal(signal.SIGALRM, handler)
+        signal.alarm(timeout_seconds)
+        try:
+            result = func(*args, **kwargs)
+            return result
+        except TimeoutError:
+            return fallback_value
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)
 # from graphviz import Digraph
 
 """
@@ -24,9 +91,9 @@ Functions: sine, cosine, exponential, logarithm, etc.
 Operators: basic binary operations including addition, multiplication, and exponentiation.
 """
 # The costs can be modified if you think their values are different
-insert_cost={"number":1,"symbol":1,"operator":1,"function":1,"matrix":1,"relation":1}
-delete_cost={"number":1,"symbol":1,"operator":1,"function":1,"matrix":1,"relation":1}
-update_cost={"number":1,"symbol":1,"operator":1,"function":1,"matrix":1,"relation":1}
+insert_cost={"number":1,"symbol":1,"operator":1,"function":1,"matrix":1,"relation":1,"logic":1}
+delete_cost={"number":1,"symbol":1,"operator":1,"function":1,"matrix":1,"relation":1,"logic":1}
+update_cost={"number":1,"symbol":1,"operator":1,"function":1,"matrix":1,"relation":1,"logic":1}
 
 change_type_cost=1 #the cost of an update between different types,can be set to higher
 
@@ -168,25 +235,21 @@ def numeric_score_calc(student_answer_exp, ground_truth_exp):
         # If numerical conversion fails, fall back to the original scoring method
         return 0
 
-@timeout_decorator.timeout(30, timeout_exception=TimeoutError)
-def simplify_with_timeout(expr):
+def _simplify_impl(expr):
     return simplify(expr)
-def time_simplify(expr):
-    try:
-        result=simplify_with_timeout(expr)
-        return result
-    except TimeoutError:
-        return expr
 
-@timeout_decorator.timeout(10, timeout_exception=TimeoutError)
-def equal_with_timeout(expr1,expr2):
+def time_simplify(expr):
+    """Simplify expression with timeout protection (disabled in distributed env)"""
+    result = run_with_timeout_safe(_simplify_impl, args=(expr,), timeout_seconds=30, fallback_value=expr)
+    return result if result is not None else expr
+
+def _equal_impl(expr1, expr2):
     return expr1.equals(expr2)
-def time_equal(expr1,expr2):
-    try:
-        result=equal_with_timeout(expr1,expr2)
-        return result
-    except TimeoutError:
-        return False
+
+def time_equal(expr1, expr2):
+    """Check equality with timeout protection (disabled in distributed env)"""
+    result = run_with_timeout_safe(_equal_impl, args=(expr1, expr2), timeout_seconds=10, fallback_value=False)
+    return result if result is not None else False
 
 
 def sympy_to_tree(expr):
@@ -666,9 +729,7 @@ def SEED(answer_latex,test_latex,type,debug_mode=False):
         answer_exp=answer_exp.subs(rep1)
         test_exp=test_exp.subs(rep2)
 
-        # if False:
-        @timeout_decorator.timeout(10, timeout_exception=TimeoutError)
-        def subtract_and_simplify_with_timeout(a, b):
+        def subtract_and_simplify_impl(a, b):
             if isinstance(a, Expr) and isinstance(b, Expr):
                 return simplify(expand(a - b))
             elif isinstance(a, Matrix) and isinstance(b, Matrix):
@@ -679,16 +740,12 @@ def SEED(answer_latex,test_latex,type,debug_mode=False):
             else:
                 return 1
         
-        def safe_subtract_and_simplify(a, b):
-            try:
-                return subtract_and_simplify_with_timeout(a, b)
-            except TimeoutError:
-                print("  -> subtract_and_simplify timeout, returning 1")
-                return 1  # Treat as unequal if a timeout occurs
-            except Exception as e:
-                print(f"  -> subtract_and_simplify error: {e}")
-                return 1
-        zero_exp=safe_subtract_and_simplify(answer_exp,test_exp)
+        zero_exp = run_with_timeout_safe(
+            subtract_and_simplify_impl, 
+            args=(answer_exp, test_exp), 
+            timeout_seconds=10, 
+            fallback_value=1
+        )
         # zero_exp=time_simplify(expand(answer_exp-test_exp))       
 
         if type == "Equation":

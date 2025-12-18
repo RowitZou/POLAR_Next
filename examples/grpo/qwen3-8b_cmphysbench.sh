@@ -87,7 +87,7 @@ if [ "$RANK" -eq 0 ]; then
     actor_rollout_ref.rollout.data_parallel_size=1 \
     actor_rollout_ref.rollout.n=8 \
     actor_rollout_ref.rollout.name=vllm \
-    actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=32 \
+    actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=8 \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.8 \
     actor_rollout_ref.rollout.max_num_seqs=64 \
     actor_rollout_ref.rollout.max_num_batched_tokens=557056 \

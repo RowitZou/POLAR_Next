@@ -3,17 +3,17 @@ set -ex
 
 cmd="source /mnt/shared-storage-user/ailab-hs/zouyicheng/.bashrc && conda activate verl-061 && \
 cd /mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/verl && \
-bash ../examples/opd/qwen3-8b_cmphysbench.sh"
+bash ../examples/opd/qwen3-8b_general_opd_cmphysbench.sh"
 
 data=cmphysbench
 policy=qwen3-8b
-reward=OPD
+reward=OPD-ZERO
 
-REPLICAS=1
+REPLICAS=2
 name="verl-polar-${policy}-${reward}-${data}"
 rjob submit -e DISTRIBUTED_JOB=true \
-    --image=registry.h.pjlab.org.cn/library/ml-base:22.04-pjlab \
-    --host-network=true --name $name -P $REPLICAS --gpu 8 --cpu 128  --memory 1600000 --namespace ailab-hs --charged-group hs_gpu \
+    --image=registry.h.pjlab.org.cn/ailab/pytorch2.7.0-cuda12.8-cudnn9:v3 \
+    --host-network=true --name $name -P $REPLICAS --gpu 8 --cpu 96  --memory 1600000 --namespace ailab-hs --charged-group hs_gpu \
     --private-machine='group' \
     --gang-start=true \
     --mount=gpfs://gpfs1/songdemin:/mnt/shared-storage-user/songdemin \

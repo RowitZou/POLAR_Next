@@ -5,15 +5,15 @@ set -x
 # Parameters from original script
 nodes=2
 train_batch_size=64
-actor_lr=2e-6
+actor_lr=1e-6
 data_name=cmphysbench
 policy_model_name=Qwen3-8B
-ref_model_name=Qwen3-30B-A3B
+ref_model_name=Qwen3-8B-RL
 reward_model_name=ZERO
 
 # Model paths
 actor_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR/models/Qwen3-8B
-ref_path=/mnt/shared-storage-user/large-model-center-share-weights/hf_hub/models--Qwen--Qwen3-30B-A3B/snapshots/ae659febe817e4b3ebd7355f47792725801204c9
+ref_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/outputs/verl_grpo_policy_Qwen3-8B_reward_SEED_data_cmphysbench/hf_models/actor_global_step_440
 
 # Data paths
 train_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/CMPhysBench/train_raw.parquet
