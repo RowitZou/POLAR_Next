@@ -394,14 +394,17 @@ class DataParallelPPOActor(BasePPOActor):
             micro_batch = micro_batch.to(get_device_id())
             model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
             with torch.no_grad():
-                if not on_ref:
-                    entropy, log_probs = self._forward_micro_batch(
-                        model_inputs, temperature=temperature, calculate_entropy=calculate_entropy
-                    )
-                else:
-                    entropy, log_probs = self._forward_ref_micro_batch(
-                        model_inputs, temperature=temperature, calculate_entropy=calculate_entropy
-                    )                    
+                entropy, log_probs = self._forward_micro_batch(
+                    model_inputs, temperature=temperature, calculate_entropy=calculate_entropy
+                )                
+                # if not on_ref:
+                #     entropy, log_probs = self._forward_micro_batch(
+                #         model_inputs, temperature=temperature, calculate_entropy=calculate_entropy
+                #     )
+                # else:
+                #     entropy, log_probs = self._forward_ref_micro_batch(
+                #         model_inputs, temperature=temperature, calculate_entropy=calculate_entropy
+                #     )                    
             log_probs_lst.append(log_probs)
             if calculate_entropy:
                 entropy_lst.append(entropy)

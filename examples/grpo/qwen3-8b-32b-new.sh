@@ -3,12 +3,18 @@
 
 set -x
 
-export WANDB_MODE=offline
+# export WANDB_MODE=offline
+export WANDB_API_KEY=3a43aed5a7a0fe33cdee3a3c7b727c6f4a42bfca
 # vLLM 不支持 PyTorch 的 expandable segments 内存分配机制（2024 起默认开启
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False
-# 关闭 NCCL DEBUG 输出
-export NCCL_DEBUG=NONE
+# ===== NCCL 配置  =====
+export NCCL_DEBUG=WARN  # 改成 WARN,便于排查但不会太冗长
 export NCCL_DEBUG_SUBSYS=ALL
+export NCCL_TIMEOUT=3600
+export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=1800
+export TORCH_NCCL_BLOCKING_WAIT=1
+export NCCL_IB_TIMEOUT=22
+export NCCL_IB_RETRY_CNT=7
 
 
 export HYDRA_FULL_ERROR=1
@@ -17,16 +23,16 @@ export VLLM_WORKER_MULTIPROC_METHOD=spawn
 ulimit -l unlimited
 
 nodes=2
-train_batch_size=512 # 512 1024
+train_batch_size=64 # 512 1024
 actor_lr=1e-6
 kl_loss_coef=1 # 0.001
-data_name=supergpqa_kl_1
-policy_model_name=Qwen3-8B-base-sft-400k
+data_name=supergpqa_kl_1_new
+policy_model_name=Qwen3-8B
 ref_model_name=Qwen3-32B
 train_epoch=5 #10 
 
 # Model paths
-actor_path=/mnt/shared-storage-user/ailab-hs/chenjiayi/models/polar-next/sft/qwen3-8b-base-sft-400k #/mnt/shared-storage-user/ailab-hs/chenjiayi/models/opensource/Qwen3-8B #/mnt/shared-storage-user/ailab-hs/chenjiayi/models/polar_next/kl_1_continue_kl_0_3epoch
+actor_path=/mnt/shared-storage-user/ailab-hs/chenjiayi/models/opensource/Qwen3-8B #/mnt/shared-storage-user/ailab-hs/chenjiayi/models/polar_next/kl_1_continue_kl_0_3epoch
 ref_path=/mnt/shared-storage-user/ailab-hs/chenjiayi/models/opensource/Qwen3-32B
 
 # Data paths
@@ -58,10 +64,12 @@ MASTER_ADDR=${MASTER_ADDR}
 echo "MASTER_ADDR: $MASTER_ADDR"
 echo "Rank $RANK is running on $MASTER_ADDR"
 
-if [ "$RANK" -eq 0 ]; then 
+if [ "$RANK" -eq 0 ]; then
+    export WANDB_MODE=online
+
     echo "Starting head node (RANK=${RANK}) on port $MASTER_PORT..."
     
-    MASTER_ADDR=${MASTER_ADDR}
+    MASTER_ADDR=${MASTER_ADDR:-$(hostname -I | awk '{print $1}')}
     echo "$MASTER_ADDR" > "$TARGET_FILE"
 
     ray start --head --num-gpus 8 --dashboard-host=0.0.0.0 --dashboard-port=8265 --disable-usage-stats --block &
@@ -96,13 +104,19 @@ if [ "$RANK" -eq 0 ]; then
         actor_rollout_ref.actor.fsdp_config.param_offload=False \
         actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
         \
-        actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=4 \
+        actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=8 \
         actor_rollout_ref.rollout.tensor_model_parallel_size=2 \
         actor_rollout_ref.rollout.data_parallel_size=1 \
+        actor_rollout_ref.rollout.max_num_seqs=64 \
         actor_rollout_ref.rollout.name=vllm \
         actor_rollout_ref.rollout.gpu_memory_utilization=0.7 \
         actor_rollout_ref.rollout.n=2 \
-        actor_rollout_ref.rollout.max_num_batched_tokens=34816 \
+        actor_rollout_ref.rollout.max_num_batched_tokens=557056 \
+        actor_rollout_ref.rollout.val_kwargs.do_sample=True \
+        actor_rollout_ref.rollout.val_kwargs.temperature=0.6 \
+        actor_rollout_ref.rollout.val_kwargs.top_k=20 \
+        actor_rollout_ref.rollout.val_kwargs.top_p=0.95 \
+        actor_rollout_ref.rollout.val_kwargs.n=4 \
         \
         ++actor_rollout_ref.ref.model.path="$ref_path" \
         +actor_rollout_ref.ref.model.use_remove_padding=True \
@@ -127,47 +141,74 @@ if [ "$RANK" -eq 0 ]; then
         custom_reward_function.name=compute_score \
         \
         trainer.rollout_data_dir="${output_dir}/trajectory_data/rollout" \
-        trainer.validation_data_dir="${output_dir}/trajectory_data/validation"
         $@
 
 else 
-    # sleep 10
-    # MASTER_ADDR=$(cat "$TARGET_FILE")
-
-    # echo "Starting worker node (RANK=${RANK}), connecting to ${MASTER_ADDR}:${MASTER_PORT}..."
-    # ray start --address ${MASTER_ADDR}:${MASTER_PORT} --num-gpus 8 --block &
-    
-    # sleep 60
-    # while true; do
-    #     status=$(ray status 2>&1)
-
-    #     if echo "$status" | grep -q "Active:"; then
-    #         echo "Active nodes found. Sleeping for 10 min..."
-    #         sleep 600
-    #     else
-    #         echo "No active nodes found. Exiting..."
-    #         exit 0
-    #     fi
-    # done
-    sleep 30
+    sleep 10
     MASTER_ADDR=$(cat "$TARGET_FILE")
 
     echo "Starting worker node (RANK=${RANK}), connecting to ${MASTER_ADDR}:${MASTER_PORT}..."
+    ray start --address ${MASTER_ADDR}:${MASTER_PORT} --num-gpus 8 --block &
     
-    # 使用 --block 选项会让进程一直运行,直到 Ray 集群关闭
-    ray start --address ${MASTER_ADDR}:${MASTER_PORT} --num-gpus 8 --block
+    sleep 60
+    while true; do
+        status=$(ray status 2>&1)
+
+        if echo "$status" | grep -q "Active:"; then
+            echo "Active nodes found. Sleeping for 10 min..."
+            sleep 600
+        else
+            echo "No active nodes found. Exiting..."
+            exit 0
+        fi
+    done
+
+    # export WANDB_MODE=disabled
+
+    # # ===== 关键修复：等待并验证文件内容 =====
+    # echo "Worker node waiting for master address file..."
     
-    # 当 ray start --block 退出时,说明集群已关闭
-    echo "Ray cluster shut down. Worker node exiting..."
-    exit 0
+    # # 等待文件存在且不为空（最多等待 60 秒）
+    # retry_count=0
+    # max_retries=60
+    
+    # while [ $retry_count -lt $max_retries ]; do
+    #     if [ -f "$TARGET_FILE" ] && [ -s "$TARGET_FILE" ]; then
+    #         MASTER_ADDR=$(cat "$TARGET_FILE" | tr -d '[:space:]')
+            
+    #         if [ -n "$MASTER_ADDR" ]; then
+    #             echo "Successfully read MASTER_ADDR: $MASTER_ADDR"
+    #             break
+    #         fi
+    #     fi
+        
+    #     echo "Waiting for master address (attempt $((retry_count+1))/$max_retries)..."
+    #     sleep 1
+    #     retry_count=$((retry_count+1))
+    # done
+    
+    # # 验证是否成功读取
+    # if [ -z "$MASTER_ADDR" ]; then
+    #     echo "ERROR: Failed to read MASTER_ADDR from $TARGET_FILE after $max_retries attempts"
+    #     echo "File exists: $([ -f "$TARGET_FILE" ] && echo 'yes' || echo 'no')"
+    #     echo "File size: $([ -f "$TARGET_FILE" ] && wc -c < "$TARGET_FILE" || echo 'N/A')"
+    #     echo "File content: $([ -f "$TARGET_FILE" ] && cat "$TARGET_FILE" || echo 'N/A')"
+    #     exit 1
+    # fi
+
+    # echo "Starting worker node (RANK=${RANK}), connecting to ${MASTER_ADDR}:${MASTER_PORT}..."
+
+    # MASTER_ADDR=$(cat "$TARGET_FILE")
+
+    # echo "Starting worker node (RANK=${RANK}), connecting to ${MASTER_ADDR}:${MASTER_PORT}..."
+    
+    # # 使用 --block 选项会让进程一直运行,直到 Ray 集群关闭
+    # ray start --address ${MASTER_ADDR}:${MASTER_PORT} --num-gpus 8 --block
+    
+    # # 当 ray start --block 退出时,说明集群已关闭
+    # echo "Ray cluster shut down. Worker node exiting..."
+    # exit 0
 fi
 
 
 
-        # actor_rollout_ref.rollout.n=2 \
-        # actor_rollout_ref.rollout.max_num_batched_tokens=557056 \
-        # actor_rollout_ref.rollout.val_kwargs.do_sample=True \
-        # actor_rollout_ref.rollout.val_kwargs.temperature=0.6 \
-        # actor_rollout_ref.rollout.val_kwargs.top_k=20 \
-        # actor_rollout_ref.rollout.val_kwargs.top_p=0.95 \
-        # actor_rollout_ref.rollout.val_kwargs.n=4 \
