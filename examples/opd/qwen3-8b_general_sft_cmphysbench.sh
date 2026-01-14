@@ -7,12 +7,12 @@ nodes=2
 train_batch_size=64
 actor_lr=1e-6
 data_name=cmphysbench
-policy_model_name=Qwen3-8B_General_OPD
+policy_model_name=Qwen3-8B_General_SFT
 ref_model_name=Qwen3-30B-A3B
 reward_model_name=ZERO
 
 # Model paths
-actor_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/outputs/verl_opd_policy_Qwen3-8B_reward_ZERO_ref_Qwen3-30B-A3B_data_General_lr_1e-6/hf_models/actor_global_step_1000
+actor_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR/outputs/sft/Qwen3-8B_general/20251217143732/hf-1173
 ref_path=/mnt/shared-storage-user/large-model-center-share-weights/hf_hub/models--Qwen--Qwen3-30B-A3B/snapshots/ae659febe817e4b3ebd7355f47792725801204c9
 
 # Data paths

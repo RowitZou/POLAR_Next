@@ -3,13 +3,13 @@ set -ex
 
 cmd="source /mnt/shared-storage-user/ailab-hs/zouyicheng/.bashrc && conda activate verl-061 && \
 cd /mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next && \
-PYTHONPATH=. python ./data/sft_general/process.py"
+bash src/utils/start_seed_server.sh -w 32 -p 30030 -t 300.0"
 
 REPLICAS=1
-name="compute-score-${start_idx}-${end_idx}"
+name="seed-score-server"
 rjob submit -e DISTRIBUTED_JOB=false \
     --image=registry.h.pjlab.org.cn/library/ml-base:22.04-pjlab \
-    --host-network=true --name $name -P $REPLICAS --gpu 0 --cpu 16 --memory 182000 --namespace ailab-hs --charged-group hs_gpu \
+    --host-network=true --name $name -P $REPLICAS --gpu 0 --cpu 32 --memory 182000 --namespace ailab-hs --charged-group hs_gpu \
     --private-machine='group' \
     --gang-start=true \
     --mount=gpfs://gpfs1/songdemin:/mnt/shared-storage-user/songdemin \

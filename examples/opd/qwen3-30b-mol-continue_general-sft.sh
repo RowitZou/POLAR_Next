@@ -4,20 +4,20 @@ set -x
 
 # Parameters from original script
 nodes=2
-train_batch_size=64
+train_batch_size=1024
 actor_lr=1e-6
-data_name=cmphysbench
-policy_model_name=Qwen3-8B_General_OPD
-ref_model_name=Qwen3-30B-A3B
+data_name=General-SFT
+policy_model_name=Qwen3-30B-Mol-Continue-Single
+ref_model_name=Qwen3-30B-General-Single
 reward_model_name=ZERO
 
 # Model paths
-actor_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/outputs/verl_opd_policy_Qwen3-8B_reward_ZERO_ref_Qwen3-30B-A3B_data_General_lr_1e-6/hf_models/actor_global_step_1000
-ref_path=/mnt/shared-storage-user/large-model-center-share-weights/hf_hub/models--Qwen--Qwen3-30B-A3B/snapshots/ae659febe817e4b3ebd7355f47792725801204c9
+actor_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR/outputs/sft/Qwen3_30B_A3_instruct-mol-continue-single/20260109084405/hf-latest
+ref_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR/outputs/sft/Qwen3_30B_A3_instruct-general-single/20260107074705/hf-1064
 
 # Data paths
-train_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/CMPhysBench/train_raw.parquet
-test_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/CMPhysBench/test.parquet
+train_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/sft_general/train/train.parquet
+test_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/sft_general/train/train.parquet
 
 # Reward Configuration
 reward_func_path="../src/rule/reward_zero.py"
@@ -90,21 +90,17 @@ if [ "$RANK" -eq 0 ]; then
     actor_rollout_ref.rollout.data_parallel_size=1 \
     actor_rollout_ref.rollout.n=2 \
     actor_rollout_ref.rollout.name=vllm \
-    actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=8 \
+    actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=2 \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.75 \
     actor_rollout_ref.rollout.max_num_seqs=64 \
     actor_rollout_ref.rollout.max_num_batched_tokens=557056 \
-    actor_rollout_ref.rollout.val_kwargs.do_sample=True \
-    actor_rollout_ref.rollout.val_kwargs.temperature=0.6 \
-    actor_rollout_ref.rollout.val_kwargs.top_k=20 \
-    actor_rollout_ref.rollout.val_kwargs.top_p=0.95 \
-    actor_rollout_ref.rollout.val_kwargs.n=8 \
     \
     +actor_rollout_ref.ref.model.path="$ref_path" \
     +actor_rollout_ref.ref.model.use_remove_padding=True \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=2 \
     actor_rollout_ref.ref.fsdp_config.forward_only=True \
     actor_rollout_ref.ref.fsdp_config.optimizer_offload=True \
+    actor_rollout_ref.ref.fsdp_config.param_offload=True \
     \
     reward_model.enable=False \
     reward_model.reward_manager=batch \
@@ -115,18 +111,14 @@ if [ "$RANK" -eq 0 ]; then
     trainer.nnodes=$nodes \
     trainer.critic_warmup=0 \
     trainer.logger='["console","wandb"]' \
-    trainer.project_name='verl_opd_cmphysbench' \
-    trainer.val_before_train=True \
+    trainer.project_name='verl_opd_science' \
+    trainer.val_before_train=False \
     trainer.experiment_name="$name" \
-    trainer.save_freq=10 \
-    trainer.total_epochs=20 \
-    trainer.test_freq=5 \
-    trainer.max_actor_ckpt_to_keep=2 \
-    trainer.max_critic_ckpt_to_keep=2 \
+    trainer.save_freq=50 \
+    trainer.total_epochs=1 \
     trainer.default_local_dir=$output_dir \
     \
     trainer.rollout_data_dir="${output_dir}/trajectory_data/rollout" \
-    trainer.validation_data_dir="${output_dir}/trajectory_data/validation"
     $@
 
 else 

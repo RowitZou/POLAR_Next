@@ -58,17 +58,27 @@ def extract_solution(solution_str):
     return ans.strip() if ans is not None else None
 
 
-def extract_thinking_content(text: str) -> tuple[str, str]:
-    pattern = r'<think>(.*?)</think>(.*)'
-    match = re.search(pattern, text, re.DOTALL)
-    if match:
-        thinking_content = match.group(1).strip()
-        remaining_content = match.group(2).strip()
-        return thinking_content, remaining_content
-    return "", text
+def extract_thinking_content(text: str, mode="qwen") -> tuple[str, str]:
+    if mode == "qwen":
+        if "<think>" not in text:
+            text = "<think>\n" + text
+        pattern = r'<think>(.*?)</think>(.*)'
+        match = re.search(pattern, text, re.DOTALL)
+        if match:
+            thinking_content = match.group(1).strip()
+            remaining_content = match.group(2).strip()
+            return thinking_content, remaining_content
+        return "", text
+    elif mode == "gpt":
+        if "assistantfinal" not in text:
+            return "", text
+        thinking_content, remaining_content = text.split("assistantfinal")[0][8:], text.split("assistantfinal")[1]
+        return thinking_content.strip(), remaining_content.strip()
+    else:
+        raise ValueError("Unsupported mode: {}".format(mode))
 
 
-def yield_data(input_path): 
+def yield_data(input_path):
 
     # If input_path is a directory
     if os.path.isdir(input_path):
@@ -88,7 +98,7 @@ def yield_data(input_path):
                 yield item
 
 
-def score(input_path, output_path, already_processed_lines=0):
+def score(input_path, output_path, already_processed_lines=0, mode="qwen"):
 
     score_cache = dict()
     fw = open(output_path, "a", encoding="utf8")
@@ -98,10 +108,7 @@ def score(input_path, output_path, already_processed_lines=0):
         if n < already_processed_lines:
             continue
 
-        if "<think>" not in item["output"]:
-            item["output"] = "<think>\n" + item["output"]
-
-        _, solution_str = extract_thinking_content(item["output"])
+        _, solution_str = extract_thinking_content(item["output"], mode=mode)
         ans = extract_solution(solution_str)
         if ans is None:
             ans = solution_str.strip()
@@ -146,16 +153,17 @@ def process(args):
         else:
             already_processed_lines = 0
         print("Already processed lines: %d" % already_processed_lines)
-        score(input_file_path, output_file_path, already_processed_lines)
+        score(input_file_path, output_file_path, already_processed_lines, args.mode)
 
 
 if __name__ == "__main__":
     
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input', type=str, default='/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/outputs/verl_opd_policy_Qwen3-8B_Genral_OPD_reward_ZERO_ref_Qwen3-30B-A3B_data_cmphysbench_lr_1e-6/trajectory_data/validation', help='input path')
-    parser.add_argument('--output', type=str, default='/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/outputs/verl_opd_policy_Qwen3-8B_Genral_OPD_reward_ZERO_ref_Qwen3-30B-A3B_data_cmphysbench_lr_1e-6/trajectory_data/score', help='output path')
+    parser.add_argument('--input', type=str, default='/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/outputs/verl_opd_policy_GPTOSS-20B_reward_ZERO_ref_GPTOSS-120B_data_cmphysbench_lr_1e-6/trajectory_data/validation', help='input path')
+    parser.add_argument('--output', type=str, default='/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/outputs/verl_opd_policy_GPTOSS-20B_reward_ZERO_ref_GPTOSS-120B_data_cmphysbench_lr_1e-6/trajectory_data/score', help='output path')
     parser.add_argument('--start', type=int, default=0, help='start file index')
     parser.add_argument('--end', type=int, default=45, help='end file index')
+    parser.add_argument('--mode', type=str, default='qwen', help='model mode: qwen or gpt')
     args = parser.parse_args()
 
     process(args)

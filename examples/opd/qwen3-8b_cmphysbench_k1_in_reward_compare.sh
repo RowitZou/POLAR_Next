@@ -7,12 +7,12 @@ nodes=2
 train_batch_size=64
 actor_lr=1e-6
 data_name=cmphysbench
-policy_model_name=Qwen3-8B_General_OPD
+policy_model_name=Qwen3-8B
 ref_model_name=Qwen3-30B-A3B
-reward_model_name=ZERO
+reward_model_name=ZERO-k1-in-reward
 
 # Model paths
-actor_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/outputs/verl_opd_policy_Qwen3-8B_reward_ZERO_ref_Qwen3-30B-A3B_data_General_lr_1e-6/hf_models/actor_global_step_1000
+actor_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR/models/Qwen3-8B
 ref_path=/mnt/shared-storage-user/large-model-center-share-weights/hf_hub/models--Qwen--Qwen3-30B-A3B/snapshots/ae659febe817e4b3ebd7355f47792725801204c9
 
 # Data paths
@@ -61,8 +61,9 @@ if [ "$RANK" -eq 0 ]; then
 
     python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
-    algorithm.use_kl_in_reward=False \
-    algorithm.kl_ctrl.kl_coef=0 \
+    algorithm.use_kl_in_reward=True \
+    algorithm.kl_ctrl.kl_coef=1.0 \
+    algorithm.kl_penalty=kl \
     \
     data.train_files="$train_data_path" \
     data.val_files="$test_data_path" \
@@ -83,8 +84,8 @@ if [ "$RANK" -eq 0 ]; then
     actor_rollout_ref.actor.ppo_mini_batch_size=$train_batch_size \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.actor.clip_ratio=0.2 \
-    actor_rollout_ref.actor.use_kl_loss=True \
-    actor_rollout_ref.actor.kl_loss_coef=1.0 \
+    actor_rollout_ref.actor.use_kl_loss=False \
+    actor_rollout_ref.actor.kl_loss_coef=0.0 \
     \
     actor_rollout_ref.rollout.tensor_model_parallel_size=2 \
     actor_rollout_ref.rollout.data_parallel_size=1 \

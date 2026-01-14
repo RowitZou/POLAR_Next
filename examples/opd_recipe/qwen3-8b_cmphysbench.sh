@@ -1,29 +1,35 @@
 #!/bin/bash
-# Verl OPD training script for Qwen3-30B-A3B
+# Verl OPD (On-Policy Distillation) training script using the new recipe implementation
+# This script uses the opd recipe which only uses KL loss (no advantage)
+# Key differences from original:
+# 1. n can be 1 since we don't need group sampling
+# 2. Uses built-in zero reward function (no need for external reward_zero.py)
 set -x
 
 # Parameters from original script
 nodes=2
 train_batch_size=64
-actor_lr=1e-6
+actor_lr=2e-6
 data_name=cmphysbench
-policy_model_name=Qwen3-8B_General_OPD
+policy_model_name=Qwen3-8B
 ref_model_name=Qwen3-30B-A3B
 reward_model_name=ZERO
 
 # Model paths
-actor_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/outputs/verl_opd_policy_Qwen3-8B_reward_ZERO_ref_Qwen3-30B-A3B_data_General_lr_1e-6/hf_models/actor_global_step_1000
+actor_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR/models/Qwen3-8B
 ref_path=/mnt/shared-storage-user/large-model-center-share-weights/hf_hub/models--Qwen--Qwen3-30B-A3B/snapshots/ae659febe817e4b3ebd7355f47792725801204c9
 
 # Data paths
 train_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/CMPhysBench/train_raw.parquet
 test_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/CMPhysBench/test.parquet
 
-# Reward Configuration
-reward_func_path="../src/rule/reward_zero.py"
+# The OPD recipe provides built-in zero reward functions in reward/ directory:
+# - recipe.opd.reward.zero_reward:compute_score_zero (for naive reward manager)
+# - recipe.opd.reward.zero_reward:compute_score_zero_batch (for batch reward manager)
+# Note: Zero reward is automatically loaded by load_reward_manager() if no custom reward is specified
 
-# Experiment name
-name="verl_opd_policy_${policy_model_name}_reward_${reward_model_name}_ref_${ref_model_name}_data_${data_name}_lr_${actor_lr}"
+# Experiment name - add "_recipe" suffix to distinguish from original
+name="verl_opd_recipe_policy_${policy_model_name}_reward_${reward_model_name}_ref_${ref_model_name}_data_${data_name}_lr_${actor_lr}"
 output_dir="../outputs/${name}"
 
 # Create output directory if it doesn't exist
@@ -59,8 +65,13 @@ if [ "$RANK" -eq 0 ]; then
     
     echo "Executing main program on head node..."
 
-    python3 -m verl.trainer.main_ppo \
-    algorithm.adv_estimator=grpo \
+    # Use the new OPD recipe instead of verl.trainer.main_ppo
+    # Key changes:
+    # 1. Use recipe.opd.main_opd as entry point
+    # 2. Use algorithm.adv_estimator=opd (zero advantage)
+    # 3. n=1 is now possible since we don't need group sampling
+    python3 -m recipe.opd.main_opd \
+    algorithm.adv_estimator=opd \
     algorithm.use_kl_in_reward=False \
     algorithm.kl_ctrl.kl_coef=0 \
     \
@@ -85,6 +96,7 @@ if [ "$RANK" -eq 0 ]; then
     actor_rollout_ref.actor.clip_ratio=0.2 \
     actor_rollout_ref.actor.use_kl_loss=True \
     actor_rollout_ref.actor.kl_loss_coef=1.0 \
+    actor_rollout_ref.actor.kl_loss_type=low_var_kl \
     \
     actor_rollout_ref.rollout.tensor_model_parallel_size=2 \
     actor_rollout_ref.rollout.data_parallel_size=1 \
@@ -108,8 +120,6 @@ if [ "$RANK" -eq 0 ]; then
     \
     reward_model.enable=False \
     reward_model.reward_manager=batch \
-    custom_reward_function.path=$reward_func_path \
-    custom_reward_function.name=compute_score_batch \
     \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=$nodes \
@@ -148,5 +158,4 @@ else
             exit 0
         fi
     done
-
 fi

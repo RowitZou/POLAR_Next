@@ -34,8 +34,8 @@ export TORCH_NCCL_ENABLE_MONITORING=0
 
 # ============ Other Configuration ============
 export WANDB_API_KEY=c89518a9cc46b986f6f2ad122a952229a76d1445
-export http_proxy=http://100.100.67.157:1081
-export https_proxy=http://100.100.67.157:1081
+export http_proxy=http://100.100.67.192:1081
+export https_proxy=http://100.100.67.192:1081
 
 # Set wandb to offline mode to prevent online sync
 # export WANDB_MODE=offline
