@@ -9,7 +9,7 @@ set -x
 # Parameters from original script
 nodes=2
 train_batch_size=64
-actor_lr=2e-6
+actor_lr=1e-6
 data_name=cmphysbench
 policy_model_name=Qwen3-8B
 ref_model_name=Qwen3-30B-A3B
@@ -23,11 +23,6 @@ ref_path=/mnt/shared-storage-user/large-model-center-share-weights/hf_hub/models
 train_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/CMPhysBench/train_raw.parquet
 test_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/CMPhysBench/test.parquet
 
-# The OPD recipe provides built-in zero reward functions in reward/ directory:
-# - recipe.opd.reward.zero_reward:compute_score_zero (for naive reward manager)
-# - recipe.opd.reward.zero_reward:compute_score_zero_batch (for batch reward manager)
-# Note: Zero reward is automatically loaded by load_reward_manager() if no custom reward is specified
-
 # Experiment name - add "_recipe" suffix to distinguish from original
 name="verl_opd_recipe_policy_${policy_model_name}_reward_${reward_model_name}_ref_${ref_model_name}_data_${data_name}_lr_${actor_lr}"
 output_dir="../outputs/${name}"
@@ -40,8 +35,8 @@ export TORCH_NCCL_ENABLE_MONITORING=0
 
 # ============ Other Configuration ============
 export WANDB_API_KEY=c89518a9cc46b986f6f2ad122a952229a76d1445
-export http_proxy=http://100.100.67.192:1081
-export https_proxy=http://100.100.67.192:1081
+export http_proxy=http://100.100.67.192:1082
+export https_proxy=http://100.100.67.192:1082
 
 # Set wandb to offline mode to prevent online sync
 # export WANDB_MODE=offline
@@ -94,13 +89,12 @@ if [ "$RANK" -eq 0 ]; then
     actor_rollout_ref.actor.ppo_mini_batch_size=$train_batch_size \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.actor.clip_ratio=0.2 \
-    actor_rollout_ref.actor.use_kl_loss=True \
-    actor_rollout_ref.actor.kl_loss_coef=1.0 \
-    actor_rollout_ref.actor.kl_loss_type=low_var_kl \
+    actor_rollout_ref.actor.use_kl_loss=False \
+    actor_rollout_ref.actor.kl_loss_coef=0.0 \
     \
     actor_rollout_ref.rollout.tensor_model_parallel_size=2 \
     actor_rollout_ref.rollout.data_parallel_size=1 \
-    actor_rollout_ref.rollout.n=2 \
+    actor_rollout_ref.rollout.n=1 \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=8 \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.75 \
@@ -125,7 +119,7 @@ if [ "$RANK" -eq 0 ]; then
     trainer.nnodes=$nodes \
     trainer.critic_warmup=0 \
     trainer.logger='["console","wandb"]' \
-    trainer.project_name='verl_opd_cmphysbench' \
+    trainer.project_name='verl_opd-recipe_cmphysbench' \
     trainer.val_before_train=True \
     trainer.experiment_name="$name" \
     trainer.save_freq=10 \

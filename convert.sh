@@ -1,9 +1,9 @@
 #!/bin/bash
 set -ex
 
-CHECKPOINT_DIR="/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/outputs/verl_opd_policy_Qwen3-30B-Mol-Single_reward_ZERO_ref_Qwen3-30B_data_General-SFT_lr_1e-6"
-GLOBAL_STEP="global_step_50"  # 选择要转换的 checkpoint
-OUTPUT_BASE_DIR="/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/outputs/verl_opd_policy_Qwen3-30B-Mol-Single_reward_ZERO_ref_Qwen3-30B_data_General-SFT_lr_1e-6/hf_models"
+CHECKPOINT_DIR="/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/outputs/verl_grpo_policy_Qwen3-30B-A3B-MA_reward_RULE_data_chemistry_moi"
+GLOBAL_STEP="global_step_180"  # 选择要转换的 checkpoint
+OUTPUT_BASE_DIR="/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/outputs/verl_grpo_policy_Qwen3-30B-A3B-MA_reward_RULE_data_chemistry_moi/hf_models"
 
 cmd="source /mnt/shared-storage-user/ailab-hs/zouyicheng/.bashrc && conda activate verl-061 && \
 cd /mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/verl && python -m verl.model_merger merge \
@@ -16,7 +16,7 @@ REPLICAS=1
 name=CONVERT_CKPT
 rjob submit -e DISTRIBUTED_JOB=true \
     --image=registry.h.pjlab.org.cn/library/ml-base:22.04-pjlab \
-    --host-network=true --name $name -P $REPLICAS --gpu 8 --cpu 32  --memory 1000000 --namespace ailab-hs --charged-group hs_gpu \
+    --host-network=true --name $name -P $REPLICAS --gpu 1 --cpu 8  --memory 256000 --namespace ailab-llmbr --charged-group llmbr_gpu \
     --private-machine='group' \
     --gang-start=true \
     --mount=gpfs://gpfs1/songdemin:/mnt/shared-storage-user/songdemin \

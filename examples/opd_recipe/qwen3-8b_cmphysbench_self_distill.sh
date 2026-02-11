@@ -1,29 +1,30 @@
 #!/bin/bash
-# Verl OPD training script for Qwen3-30B-A3B
+# Verl OPD (On-Policy Distillation) training script using the new recipe implementation
+# This script uses the opd recipe which only uses KL loss (no advantage)
+# Key differences from original:
+# 1. n can be 1 since we don't need group sampling
+# 2. Uses built-in zero reward function (no need for external reward_zero.py)
 set -x
 
 # Parameters from original script
 nodes=2
-train_batch_size=1024
+train_batch_size=64
 actor_lr=1e-6
-data_name=General-SFT
-policy_model_name=Qwen3-30B-Mol-Continue-Single
-ref_model_name=Qwen3-30B-General-Single
+data_name=cmphysbench
+policy_model_name=Qwen3-8B
+ref_model_name=Qwen3-8B-RL
 reward_model_name=ZERO
 
 # Model paths
-actor_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR/outputs/sft/Qwen3_30B_A3_instruct-mol-continue-single/20260109084405/hf-latest
-ref_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR/outputs/sft/Qwen3_30B_A3_instruct-general-single/20260107074705/hf-1064
+actor_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR/models/Qwen3-8B
+ref_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/outputs/verl_grpo_policy_Qwen3-8B_reward_SEED_data_cmphysbench/hf_models/actor_global_step_440
 
 # Data paths
-train_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/sft_general/train/train.parquet
-test_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/sft_general/train/train.parquet
+train_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/CMPhysBench/train_raw.parquet
+test_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/CMPhysBench/test.parquet
 
-# Reward Configuration
-reward_func_path="../src/rule/reward_zero.py"
-
-# Experiment name
-name="verl_opd_policy_${policy_model_name}_reward_${reward_model_name}_ref_${ref_model_name}_data_${data_name}_lr_${actor_lr}"
+# Experiment name - add "_recipe" suffix to distinguish from original
+name="verl_opd_recipe_policy_${policy_model_name}_reward_${reward_model_name}_ref_${ref_model_name}_data_${data_name}_lr_${actor_lr}"
 output_dir="../outputs/${name}"
 
 # Create output directory if it doesn't exist
@@ -34,8 +35,8 @@ export TORCH_NCCL_ENABLE_MONITORING=0
 
 # ============ Other Configuration ============
 export WANDB_API_KEY=c89518a9cc46b986f6f2ad122a952229a76d1445
-export http_proxy=http://100.100.67.192:1081
-export https_proxy=http://100.100.67.192:1081
+export http_proxy=http://100.100.67.192:1082
+export https_proxy=http://100.100.67.192:1082
 
 # Set wandb to offline mode to prevent online sync
 # export WANDB_MODE=offline
@@ -59,8 +60,13 @@ if [ "$RANK" -eq 0 ]; then
     
     echo "Executing main program on head node..."
 
-    python3 -m verl.trainer.main_ppo \
-    algorithm.adv_estimator=grpo \
+    # Use the new OPD recipe instead of verl.trainer.main_ppo
+    # Key changes:
+    # 1. Use recipe.opd.main_opd as entry point
+    # 2. Use algorithm.adv_estimator=opd (zero advantage)
+    # 3. n=1 is now possible since we don't need group sampling
+    python3 -m recipe.opd.main_opd \
+    algorithm.adv_estimator=opd \
     algorithm.use_kl_in_reward=False \
     algorithm.kl_ctrl.kl_coef=0 \
     \
@@ -83,42 +89,48 @@ if [ "$RANK" -eq 0 ]; then
     actor_rollout_ref.actor.ppo_mini_batch_size=$train_batch_size \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.actor.clip_ratio=0.2 \
-    actor_rollout_ref.actor.use_kl_loss=True \
-    actor_rollout_ref.actor.kl_loss_coef=1.0 \
+    actor_rollout_ref.actor.use_kl_loss=False \
+    actor_rollout_ref.actor.kl_loss_coef=0.0 \
     \
     actor_rollout_ref.rollout.tensor_model_parallel_size=2 \
     actor_rollout_ref.rollout.data_parallel_size=1 \
-    actor_rollout_ref.rollout.n=2 \
+    actor_rollout_ref.rollout.n=1 \
     actor_rollout_ref.rollout.name=vllm \
-    actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=2 \
+    actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=8 \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.75 \
     actor_rollout_ref.rollout.max_num_seqs=64 \
     actor_rollout_ref.rollout.max_num_batched_tokens=557056 \
+    actor_rollout_ref.rollout.val_kwargs.do_sample=True \
+    actor_rollout_ref.rollout.val_kwargs.temperature=0.6 \
+    actor_rollout_ref.rollout.val_kwargs.top_k=20 \
+    actor_rollout_ref.rollout.val_kwargs.top_p=0.95 \
+    actor_rollout_ref.rollout.val_kwargs.n=8 \
     \
     +actor_rollout_ref.ref.model.path="$ref_path" \
     +actor_rollout_ref.ref.model.use_remove_padding=True \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=2 \
     actor_rollout_ref.ref.fsdp_config.forward_only=True \
     actor_rollout_ref.ref.fsdp_config.optimizer_offload=True \
-    actor_rollout_ref.ref.fsdp_config.param_offload=True \
     \
     reward_model.enable=False \
     reward_model.reward_manager=batch \
-    custom_reward_function.path=$reward_func_path \
-    custom_reward_function.name=compute_score_batch \
     \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=$nodes \
     trainer.critic_warmup=0 \
     trainer.logger='["console","wandb"]' \
-    trainer.project_name='verl_opd_science' \
-    trainer.val_before_train=False \
+    trainer.project_name='verl_opd-recipe_cmphysbench' \
+    trainer.val_before_train=True \
     trainer.experiment_name="$name" \
-    trainer.save_freq=50 \
-    trainer.total_epochs=1 \
+    trainer.save_freq=10 \
+    trainer.total_epochs=20 \
+    trainer.test_freq=5 \
+    trainer.max_actor_ckpt_to_keep=2 \
+    trainer.max_critic_ckpt_to_keep=2 \
     trainer.default_local_dir=$output_dir \
     \
     trainer.rollout_data_dir="${output_dir}/trajectory_data/rollout" \
+    trainer.validation_data_dir="${output_dir}/trajectory_data/validation"
     $@
 
 else 
@@ -140,5 +152,4 @@ else
             exit 0
         fi
     done
-
 fi

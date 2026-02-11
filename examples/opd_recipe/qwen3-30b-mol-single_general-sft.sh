@@ -7,23 +7,20 @@ nodes=2
 train_batch_size=1024
 actor_lr=1e-6
 data_name=General-SFT
-policy_model_name=Qwen3-30B-Mol-Continue-Single
+policy_model_name=Qwen3-30B-Mol-Single
 ref_model_name=Qwen3-30B-General-Single
 reward_model_name=ZERO
 
 # Model paths
-actor_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR/outputs/sft/Qwen3_30B_A3_instruct-mol-continue-single/20260109084405/hf-latest
+actor_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR/outputs/sft/Qwen3_30B_A3_instruct-mol-single/20260107072307/hf-7959
 ref_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR/outputs/sft/Qwen3_30B_A3_instruct-general-single/20260107074705/hf-1064
 
 # Data paths
 train_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/sft_general/train/train.parquet
 test_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/sft_general/train/train.parquet
 
-# Reward Configuration
-reward_func_path="../src/rule/reward_zero.py"
-
 # Experiment name
-name="verl_opd_policy_${policy_model_name}_reward_${reward_model_name}_ref_${ref_model_name}_data_${data_name}_lr_${actor_lr}"
+name="verl_opd_recipe_policy_${policy_model_name}_reward_${reward_model_name}_ref_${ref_model_name}_data_${data_name}_lr_${actor_lr}"
 output_dir="../outputs/${name}"
 
 # Create output directory if it doesn't exist
@@ -34,8 +31,8 @@ export TORCH_NCCL_ENABLE_MONITORING=0
 
 # ============ Other Configuration ============
 export WANDB_API_KEY=c89518a9cc46b986f6f2ad122a952229a76d1445
-export http_proxy=http://100.100.67.192:1081
-export https_proxy=http://100.100.67.192:1081
+export http_proxy=http://100.100.67.192:1082
+export https_proxy=http://100.100.67.192:1082
 
 # Set wandb to offline mode to prevent online sync
 # export WANDB_MODE=offline
@@ -59,8 +56,8 @@ if [ "$RANK" -eq 0 ]; then
     
     echo "Executing main program on head node..."
 
-    python3 -m verl.trainer.main_ppo \
-    algorithm.adv_estimator=grpo \
+    python3 -m recipe.opd.main_opd \
+    algorithm.adv_estimator=opd \
     algorithm.use_kl_in_reward=False \
     algorithm.kl_ctrl.kl_coef=0 \
     \
@@ -83,12 +80,12 @@ if [ "$RANK" -eq 0 ]; then
     actor_rollout_ref.actor.ppo_mini_batch_size=$train_batch_size \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.actor.clip_ratio=0.2 \
-    actor_rollout_ref.actor.use_kl_loss=True \
-    actor_rollout_ref.actor.kl_loss_coef=1.0 \
+    actor_rollout_ref.actor.use_kl_loss=False \
+    actor_rollout_ref.actor.kl_loss_coef=0.0 \
     \
     actor_rollout_ref.rollout.tensor_model_parallel_size=2 \
     actor_rollout_ref.rollout.data_parallel_size=1 \
-    actor_rollout_ref.rollout.n=2 \
+    actor_rollout_ref.rollout.n=1 \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=2 \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.75 \
@@ -104,14 +101,12 @@ if [ "$RANK" -eq 0 ]; then
     \
     reward_model.enable=False \
     reward_model.reward_manager=batch \
-    custom_reward_function.path=$reward_func_path \
-    custom_reward_function.name=compute_score_batch \
     \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=$nodes \
     trainer.critic_warmup=0 \
     trainer.logger='["console","wandb"]' \
-    trainer.project_name='verl_opd_science' \
+    trainer.project_name='verl_opd_recipe_science' \
     trainer.val_before_train=False \
     trainer.experiment_name="$name" \
     trainer.save_freq=50 \

@@ -45,7 +45,7 @@ SEED_SERVER_ADDRESS = os.environ.get('SEED_SERVER_ADDRESS', '10.102.243.64:30030
 SEED_SERVER_TIMEOUT = float(os.environ.get('SEED_SERVER_TIMEOUT', '600.0'))
 
 # Import client using absolute import
-from utils.seed_client import SEEDClient, get_seed_client
+from utils.seed.seed_client import SEEDClient, get_seed_client
 
 
 def remove_boxed(s):

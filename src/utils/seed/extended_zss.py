@@ -8,8 +8,7 @@
 
 
 import collections
-import numpy as np
-from numpy import zeros,ones
+from numpy import zeros, ones
 
 class Node(object):
 

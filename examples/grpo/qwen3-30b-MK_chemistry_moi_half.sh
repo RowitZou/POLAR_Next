@@ -1,29 +1,27 @@
 #!/bin/bash
-# Verl OPD training script for Qwen3-30B-A3B
+# Verl PPO training script for Qwen2.5-7B
 set -x
 
 # Parameters from original script
-nodes=2
-train_batch_size=1024
+nodes=4
+train_batch_size=512
 actor_lr=1e-6
-data_name=General-SFT
-policy_model_name=Qwen3-30B-Mol-Continue-Single
-ref_model_name=Qwen3-30B-General-Single
-reward_model_name=ZERO
+data_name=chemistry_moi_half_part
+policy_model_name=Qwen3-30B-A3B-MK
+reward_model_name=RULE
 
 # Model paths
-actor_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR/outputs/sft/Qwen3_30B_A3_instruct-mol-continue-single/20260109084405/hf-latest
-ref_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR/outputs/sft/Qwen3_30B_A3_instruct-general-single/20260107074705/hf-1064
+actor_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR/outputs/sft/Qwen3_30B_A3_instruct-general-continue-single-remove-cot-half-part1/20260127084336/hf-latest
 
 # Data paths
-train_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/sft_general/train/train.parquet
-test_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/sft_general/train/train.parquet
+train_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/chemistry_moi/train_part_2/train.parquet
+test_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/chemistry_moi/train_part_2/train.parquet
 
 # Reward Configuration
-reward_func_path="../src/rule/reward_zero.py"
+reward_func_path="../src/rule/reward_chemistry.py"
 
 # Experiment name
-name="verl_opd_policy_${policy_model_name}_reward_${reward_model_name}_ref_${ref_model_name}_data_${data_name}_lr_${actor_lr}"
+name="verl_grpo_policy_${policy_model_name}_reward_${reward_model_name}_data_${data_name}"
 output_dir="../outputs/${name}"
 
 # Create output directory if it doesn't exist
@@ -32,10 +30,9 @@ mkdir -p $output_dir
 # Disable NCCL monitoring if still having issues (uncomment if needed)
 export TORCH_NCCL_ENABLE_MONITORING=0
 
-# ============ Other Configuration ============
 export WANDB_API_KEY=c89518a9cc46b986f6f2ad122a952229a76d1445
-export http_proxy=http://100.100.67.192:1081
-export https_proxy=http://100.100.67.192:1081
+export http_proxy=http://100.100.67.192:1082
+export https_proxy=http://100.100.67.192:1082
 
 # Set wandb to offline mode to prevent online sync
 # export WANDB_MODE=offline
@@ -80,27 +77,21 @@ if [ "$RANK" -eq 0 ]; then
     \
     actor_rollout_ref.actor.optim.lr=$actor_lr \
     actor_rollout_ref.actor.optim.lr_warmup_steps_ratio=0 \
+    actor_rollout_ref.actor.use_dynamic_bsz=True \
     actor_rollout_ref.actor.ppo_mini_batch_size=$train_batch_size \
-    actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1 \
+    actor_rollout_ref.actor.ppo_max_token_len_per_gpu=$(((2048 + 32768)*2)) \
     actor_rollout_ref.actor.clip_ratio=0.2 \
-    actor_rollout_ref.actor.use_kl_loss=True \
-    actor_rollout_ref.actor.kl_loss_coef=1.0 \
+    actor_rollout_ref.actor.use_kl_loss=False \
     \
     actor_rollout_ref.rollout.tensor_model_parallel_size=2 \
     actor_rollout_ref.rollout.data_parallel_size=1 \
-    actor_rollout_ref.rollout.n=2 \
+    actor_rollout_ref.rollout.n=8 \
     actor_rollout_ref.rollout.name=vllm \
-    actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=2 \
-    actor_rollout_ref.rollout.gpu_memory_utilization=0.75 \
-    actor_rollout_ref.rollout.max_num_seqs=64 \
+    actor_rollout_ref.rollout.log_prob_use_dynamic_bsz=True \
+    actor_rollout_ref.rollout.log_prob_max_token_len_per_gpu=$(((2048 + 32768)*4)) \
+    actor_rollout_ref.rollout.gpu_memory_utilization=0.9 \
+    actor_rollout_ref.rollout.max_num_seqs=512 \
     actor_rollout_ref.rollout.max_num_batched_tokens=557056 \
-    \
-    +actor_rollout_ref.ref.model.path="$ref_path" \
-    +actor_rollout_ref.ref.model.use_remove_padding=True \
-    actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=2 \
-    actor_rollout_ref.ref.fsdp_config.forward_only=True \
-    actor_rollout_ref.ref.fsdp_config.optimizer_offload=True \
-    actor_rollout_ref.ref.fsdp_config.param_offload=True \
     \
     reward_model.enable=False \
     reward_model.reward_manager=batch \
@@ -111,14 +102,18 @@ if [ "$RANK" -eq 0 ]; then
     trainer.nnodes=$nodes \
     trainer.critic_warmup=0 \
     trainer.logger='["console","wandb"]' \
-    trainer.project_name='verl_opd_science' \
+    trainer.project_name='verl_grpo_chemistry_moi' \
     trainer.val_before_train=False \
     trainer.experiment_name="$name" \
-    trainer.save_freq=50 \
+    trainer.save_freq=20 \
     trainer.total_epochs=1 \
+    trainer.test_freq=-1 \
+    trainer.max_actor_ckpt_to_keep=5 \
+    trainer.max_critic_ckpt_to_keep=2 \
     trainer.default_local_dir=$output_dir \
     \
     trainer.rollout_data_dir="${output_dir}/trajectory_data/rollout" \
+    trainer.validation_data_dir="${output_dir}/trajectory_data/validation"
     $@
 
 else 

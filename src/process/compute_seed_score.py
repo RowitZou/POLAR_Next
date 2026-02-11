@@ -159,8 +159,8 @@ def process(args):
 if __name__ == "__main__":
     
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input', type=str, default='/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/outputs/verl_opd_policy_GPTOSS-20B_reward_ZERO_ref_GPTOSS-120B_data_cmphysbench_lr_1e-6/trajectory_data/validation', help='input path')
-    parser.add_argument('--output', type=str, default='/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/outputs/verl_opd_policy_GPTOSS-20B_reward_ZERO_ref_GPTOSS-120B_data_cmphysbench_lr_1e-6/trajectory_data/score', help='output path')
+    parser.add_argument('--input', type=str, default='/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/outputs/verl_opd_recipe_policy_Qwen3-8B_reward_ZERO_ref_Qwen3-8B-RL_data_cmphysbench_lr_1e-6/trajectory_data/validation', help='input path')
+    parser.add_argument('--output', type=str, default='/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/outputs/verl_opd_recipe_policy_Qwen3-8B_reward_ZERO_ref_Qwen3-8B-RL_data_cmphysbench_lr_1e-6/trajectory_data/score', help='output path')
     parser.add_argument('--start', type=int, default=0, help='start file index')
     parser.add_argument('--end', type=int, default=45, help='end file index')
     parser.add_argument('--mode', type=str, default='qwen', help='model mode: qwen or gpt')

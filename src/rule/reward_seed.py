@@ -17,7 +17,7 @@ import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__name__), '..', 'src'))
-from utils import SEED
+from utils.seed import SEED
 
 
 def remove_boxed(s):

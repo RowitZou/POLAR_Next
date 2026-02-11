@@ -235,13 +235,13 @@ def main():
     parser.add_argument(
         '--score_dir', 
         type=str,
-        default='outputs/verl_opd_policy_GPTOSS-20B_reward_ZERO_ref_GPTOSS-120B_data_cmphysbench_lr_1e-6/trajectory_data/score',
+        default='outputs/verl_opd_recipe_policy_Qwen3-8B_reward_ZERO_ref_Qwen3-8B-RL_data_cmphysbench_lr_1e-6/trajectory_data/score',
         help='Path to the score directory containing JSONL files'
     )
     parser.add_argument(
         '--output_dir',
         type=str,
-        default='outputs/verl_opd_policy_GPTOSS-20B_reward_ZERO_ref_GPTOSS-120B_data_cmphysbench_lr_1e-6/trajectory_data/score_visualization',
+        default='outputs/verl_opd_recipe_policy_Qwen3-8B_reward_ZERO_ref_Qwen3-8B-RL_data_cmphysbench_lr_1e-6/trajectory_data/score_visualization',
         help='Path to save the output plots'
     )
     parser.add_argument(

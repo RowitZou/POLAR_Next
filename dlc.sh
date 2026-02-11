@@ -3,13 +3,13 @@ set -ex
 
 cmd="source /mnt/shared-storage-user/ailab-hs/zouyicheng/.bashrc && conda activate verl-061 && \
 cd /mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/verl && \
-bash ../examples/opd/qwen3-8b_cmphysbench_k1_in_reward_compare.sh"
+bash ../examples/grpo/qwen3-30b-MA_chemistry_moi.sh"
 
-data=cmphysbench
-policy=qwen3-8b
-reward=ZERO-k1-in-reward
+data=chemistry_moi
+policy=qwen3-30b-MH
+reward=RULE
 
-REPLICAS=2
+REPLICAS=4
 name="verl-grpo-${policy}-${reward}-${data}"
 rjob submit -e DISTRIBUTED_JOB=true \
     --image=registry.h.pjlab.org.cn/ailab/pytorch2.7.0-cuda12.8-cudnn9:v3 \
