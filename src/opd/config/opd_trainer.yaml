@@ -1,0 +1,88 @@
+# On-Policy Distillation (OPD) Trainer Configuration
+# 
+# OPD trains a student model to match a teacher model using on-policy samples.
+# The core idea is to minimize the reverse KL divergence between student and teacher.
+#
+# Key difference from GRPO:
+# - GRPO requires n >= 2 samples per prompt for group-wise comparison
+# - OPD works with n = 1 sample using teacher log-prob as direct signal
+
+hydra:
+  searchpath:
+    - file://verl/trainer/config
+
+defaults:
+  - ppo_trainer
+  - _self_
+
+# Data configuration
+data:
+  gen_batch_size: ${data.train_batch_size}
+
+# Reward model configuration
+reward_model:
+  # For OPD, reward model is optional (external reward can supplement KL-based reward)
+  enable: False
+  reward_manager: batch
+  overlong_buffer: 
+    enable: False
+    len: 0
+    penalty_factor: 0.0
+    log: False
+
+# Algorithm configuration for OPD
+algorithm:
+  # Use OPD advantage estimator (registered in core_algos.py)
+  # This works with n=1 sample, unlike GRPO which requires n>=2
+  adv_estimator: opd
+  
+  # OPD-specific estimator variant
+  # Options: "token_level", "sequence_level"
+  # - token_level: advantage at each token position (default, recommended)
+  # - sequence_level: same advantage for all tokens in a sequence
+  opd_estimator: token_level
+  
+  # Disable KL in reward (KL is computed directly in RayOPDTrainer.fit())
+  use_kl_in_reward: False
+  
+  # KL penalty type for computing divergence (used for metrics)
+  kl_penalty: kl
+  
+  # Whether to normalize advantages in compute_opd_outcome_advantage
+  normalize_advantages: False
+  
+  # Optional: clip advantages to [-clip, clip] for stability
+  clip_advantage: null
+
+# Actor/Rollout/Reference model configuration
+actor_rollout_ref:
+  actor:
+    # Disable KL loss in actor update (KL is used as advantage, not loss term)
+    use_kl_loss: False
+    
+    # Coefficient for KL loss (not used when use_kl_loss=False)
+    kl_loss_coef: 0.0
+    
+    # Loss aggregation mode
+    # Valid values: token-mean, seq-mean-token-sum, seq-mean-token-mean, seq-mean-token-sum-norm
+    loss_agg_mode: token-mean
+    
+    # PPO clipping ratio
+    clip_ratio: 0.2
+  
+  rollout:
+    # OPD can work with n=1, unlike GRPO which needs n>=2
+    n: 1
+  
+  # Reference (teacher) model configuration
+  # The reference model provides the teacher distribution
+  ref:
+    fsdp_config:
+      # Only forward pass needed for teacher
+      forward_only: True
+      # Offload optimizer to save memory
+      optimizer_offload: True
+
+# Disable critic (not needed for OPD)
+critic:
+  enable: False

@@ -16,8 +16,7 @@ import re
 import sys
 import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__name__), '..', 'src'))
-from utils.seed import SEED
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 
 
 def remove_boxed(s):
@@ -25,18 +24,13 @@ def remove_boxed(s):
         return None
     if "\\boxed " in s:
         left = "\\boxed "
-        try:
-            assert s[: len(left)] == left
-        except:
-            return None
+        assert s[: len(left)] == left
         return s[len(left):]
 
     left = "\\boxed{"
-    try:
-        assert s[: len(left)] == left
-        assert s[-1] == "}"
-    except:
-        return None
+
+    assert s[: len(left)] == left
+    assert s[-1] == "}"
 
     return s[len(left): -1]
 
@@ -97,32 +91,33 @@ def compute_score_batch(data_sources, solution_strs, ground_truths, extra_infos,
         scores: A list of computed scores for each data source.
     """
 
-    if extra_infos[0]["split"] == "test":
-        return [0. for _ in range(len(solution_strs))]
+    # if extra_infos[0]["split"] == "train":
+    #     return [0. for _ in range(len(solution_strs))]
 
-    batch_data = []
-    for data_source, solution_str, ground_truth, extra_info in zip(
-        data_sources, solution_strs, ground_truths, extra_infos, strict=True
-    ):
+    # batch_data = []
+    # for data_source, solution_str, ground_truth, extra_info in zip(
+    #     data_sources, solution_strs, ground_truths, extra_infos, strict=True
+    # ):
 
-        _, solution_str = extract_thinking_content(solution_str)
-        extracted_solution_str = extract_solution(solution_str)
+    #     _, solution_str = extract_thinking_content(solution_str)
+    #     extracted_solution_str = extract_solution(solution_str)
 
-        data = {
-            "prompt": extra_info[prompt_key],
-            "reference": ground_truth,
-            "output": extracted_solution_str,
-            "wrapper": "sft"
-        }
-        batch_data.append(data)
+    #     data = {
+    #         "prompt": extra_info[prompt_key],
+    #         "reference": ground_truth,
+    #         "output": extracted_solution_str,
+    #         "wrapper": "sft"
+    #     }
+    #     batch_data.append(data)
 
-    scores = []
+    # scores = []
 
-    for item in batch_data:
-        if item["output"] is None or len(item["output"].strip()) > 1000:
-            scores.append(0.)
-            continue
-        score, _, _, _ = SEED(item["reference"], item["output"], "Expression")
-        scores.append(score)
+    # for item in batch_data:
+    #     if item["output"] is None or len(item["output"].strip()) > 1000:
+    #         scores.append(0.)
+    #         continue
+    #     score, _, _, _ = SEED(item["reference"], item["output"], "Expression")
+    #     scores.append(score)
 
-    return scores
+    # return scores
+    return [0. for _ in range(len(solution_strs))]

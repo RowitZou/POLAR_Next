@@ -18,7 +18,7 @@ train_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/che
 test_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/chemistry_moi/train_part_2/train.parquet
 
 # Reward Configuration
-reward_func_path="../src/rule/reward_chemistry.py"
+reward_func_path="../src/reward/rule/reward_chemistry.py"
 
 # Experiment name
 name="verl_grpo_policy_${policy_model_name}_reward_${reward_model_name}_data_${data_name}"

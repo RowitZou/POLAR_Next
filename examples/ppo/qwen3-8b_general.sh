@@ -20,7 +20,7 @@ train_data_path=$HOME/data/general/train.parquet
 test_data_path=$HOME/data/general/train.parquet # no use
 
 # Reward Configuration
-reward_func_path="../src/polar/reward_func.py"
+reward_func_path="../src/reward/polar/reward_func.py"
 
 # Experiment name
 name="verl_ppo_policy_${policy_model_name}_reward_${reward_model_name}_data_${data_name}"

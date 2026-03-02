@@ -20,7 +20,7 @@ train_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/CMP
 test_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/CMPhysBench/test.parquet
 
 # Reward Configuration
-reward_func_path="../src/rule/reward_zero.py"
+reward_func_path="../src/reward/rule/reward_zero.py"
 
 # Experiment name
 name="verl_opd_policy_${policy_model_name}_reward_${reward_model_name}_ref_${ref_model_name}_data_${data_name}"

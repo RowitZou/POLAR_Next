@@ -168,7 +168,7 @@ def main():
     parser = argparse.ArgumentParser(description="统计评测文件中prediction字段的thinking格式通过率")
     parser.add_argument(
         "--prediction_dir",
-        default="/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/opencompass/chat_objective/20260107_210624/predictions/verl_grpo_policy_Qwen3-30B-A3B-MH_reward_RULE_data_chemistry_moi_step_120_retrain",
+        default="/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/opencompass/chat_objective/20260107_210624/predictions/Qwen3_30B_A3_instruct-general-continue-mix-remove-cot-half-part1",
         type=str,
         help="包含评测文件的目录路径"
     )

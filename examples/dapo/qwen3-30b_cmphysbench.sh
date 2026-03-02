@@ -20,7 +20,7 @@ train_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR/data/CMPhysBe
 test_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR/data/CMPhysBench/test.parquet
 
 # Reward Configuration
-reward_func_path="../src/polar/reward_seed.py"
+reward_func_path="../src/reward/rule/reward_seed.py"
 
 # Experiment name
 name="verl_dapo_policy_${policy_model_name}_reward_${reward_model_name}_data_${data_name}"

@@ -18,7 +18,7 @@ train_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/CMP
 test_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/CMPhysBench/test.parquet
 
 # Reward Configuration
-reward_func_path="../src/rule/reward_seed.py"
+reward_func_path="../src/reward/rule/reward_seed.py"
 
 # Experiment name
 name="verl_grpo_policy_${policy_model_name}_reward_${reward_model_name}_data_${data_name}"
