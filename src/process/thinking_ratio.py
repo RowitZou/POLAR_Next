@@ -7,12 +7,16 @@ from typing import Dict, List, Tuple
 categories = [
     "GPQA_diamond",
     "mmlu_pro",
-    "FS-selfies",
-    "MC-selfies",
-    "MG-selfies",
-    "PP-selfies",
-    "RP-selfies",
-    "RS-selfies",
+    # "FS-selfies",
+    # "MC-selfies",
+    # "MG-selfies",
+    # "PP-selfies",
+    # "RP-selfies",
+    # "RS-selfies",
+    "matbench_expt_gap",
+    "matbench_expt_is_metal",
+    "matbench_glass",
+    "matbench_steels"
 ]
 
 
@@ -168,7 +172,7 @@ def main():
     parser = argparse.ArgumentParser(description="统计评测文件中prediction字段的thinking格式通过率")
     parser.add_argument(
         "--prediction_dir",
-        default="/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/opencompass/chat_objective/20260107_210624/predictions/Qwen3_30B_A3_instruct-general-continue-mix-remove-cot-half-part1",
+        default="/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/opencompass/chat_objective/20260107_210624/predictions/Material-Qwen3_30B_A3_instruct-general-continue-single",
         type=str,
         help="包含评测文件的目录路径"
     )

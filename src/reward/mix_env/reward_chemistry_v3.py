@@ -5,7 +5,8 @@ Combines:
 - Rule-based scoring for final answer correctness (FTS, MAE, METEOR)
 - LLM-based judging for reasoning process quality (CoT evaluation)
 
-Final reward = rule_score if LLM judges the process as reasonable, else -1.0 (format/process error)
+Final reward = rule_score if LLM judges the process as reasonable,
+              else dynamic punishment score based on failed rubrics (-1.0 for format errors)
 """
 
 import os
@@ -90,6 +91,7 @@ SCORE_INFO = {
 
 
 # ===== LLM Judge Template and Rubrics =====
+# Template WITH CoT visible (for thinking_required=True rubrics)
 judge_template = """You are an expert chemistry process evaluator.
 
 **Sample to be Evaluated:**
@@ -97,17 +99,17 @@ judge_template = """You are an expert chemistry process evaluator.
 - **Model Chain of Thought:** {thinking_content}
 - **Model Final Answer:** {answer_content}
 
-**Evaluation Rubric:**
+**Evaluation Criterion:**
 {rubric}
 
 **CRITICAL INSTRUCTION:**
 - **DO NOT** evaluate whether the final answer is factually correct or accurate.
 - Accuracy verification is handled by external rule-based systems.
-- Your ONLY job is to evaluate: (1) CoT-Answer Consistency, (2) Output Integrity (anti-cheating), (3) CoT Completeness & Reasonableness.
+- Your ONLY job is to evaluate the single criterion described above.
 
-Analyze the model's performance based strictly on the provided Rubric.
-If the model MEETS ALL the criteria described in the rubric, the result must be True.
-If the model FAILS ANY of the criterion, the result must be False.
+Analyze the model's performance based strictly on the provided Criterion.
+If the model MEETS the criterion, the result must be True.
+If the model FAILS the criterion, the result must be False.
 
 **Boundary Case Handling:**
 If ANY of the following boundary cases occur, the result must be **False**:
@@ -118,32 +120,156 @@ If ANY of the following boundary cases occur, the result must be **False**:
 Return a single JSON object:
 {{"result": true, "explain": "Brief explanation..."}} or {{"result": false, "explain": "Brief explanation..."}}"""
 
+# Template WITHOUT CoT visible (for thinking_required=False rubrics)
+# The judger only sees the question and the final answer, preventing CoT-based hacking.
+judge_template_no_cot = """You are an expert chemistry process evaluator.
+
+**Sample to be Evaluated:**
+- **User Question:** {query}
+- **Model Final Answer:** {answer_content}
+
+**Evaluation Criterion:**
+{rubric}
+
+**CRITICAL INSTRUCTION:**
+- **DO NOT** evaluate whether the final answer is factually correct or accurate.
+- Accuracy verification is handled by external rule-based systems.
+- Your ONLY job is to evaluate the single criterion described above.
+
+Analyze the model's output based strictly on the provided Criterion.
+If the model MEETS the criterion, the result must be True.
+If the model FAILS the criterion, the result must be False.
+
+**Boundary Case Handling:**
+If the Model Final Answer is absent, empty, or consists only of generic filler text, the result must be **False**.
+
+**Output Format:**
+Return a single JSON object:
+{{"result": true, "explain": "Brief explanation..."}} or {{"result": false, "explain": "Brief explanation..."}}"""
+
+# Template WITHOUT Answer visible (for answer_required=False rubrics)
+# The judger only sees the question and the CoT, focusing purely on reasoning quality.
+judge_template_no_answer = """You are an expert chemistry process evaluator.
+
+**Sample to be Evaluated:**
+- **User Question:** {query}
+- **Model Chain of Thought:** {thinking_content}
+- **Model Final Answer:** [OMITTED — not relevant to this criterion]
+
+**Evaluation Criterion:**
+{rubric}
+
+**CRITICAL INSTRUCTION:**
+- The Model Final Answer has been intentionally omitted from this evaluation.
+- You MUST evaluate this criterion based **solely on the Chain of Thought** above.
+- **DO NOT** attempt to infer, guess, or reason about what the final answer might be.
+- **DO NOT** evaluate whether any answer is factually correct or accurate.
+- Your ONLY job is to evaluate the single criterion described above using the CoT alone.
+
+Analyze the model's Chain of Thought based strictly on the provided Criterion.
+If the model MEETS the criterion, the result must be True.
+If the model FAILS the criterion, the result must be False.
+
+**Boundary Case Handling:**
+If the Chain of Thought is absent, empty, or consists only of generic filler text, the result must be **False**.
+
+**Output Format:**
+Return a single JSON object:
+{{"result": true, "explain": "Brief explanation..."}} or {{"result": false, "explain": "Brief explanation..."}}"""
+
 # Rubrics focus on: Consistency, Anti-cheating, CoT Completeness & Reasonableness
 # NOTE: Accuracy is NOT evaluated here - handled by external rule-based systems
+# Each task type maps to a list of individual rubric criteria for separate judging.
 rubrics = {
-    "FS": """1. **CoT-Answer Consistency**: The final SELFIES must logically follow from the CoT conclusion. If CoT concludes X but answer gives Y, auto-fail. (Do NOT verify chemical correctness)
-2. **Anti-Cheating**: Output must NOT be copied/appended input reactants or reagents. Must show genuine transformation attempt.
-3. **CoT Completeness**: CoT must contain substantive reasoning (reaction type identification, mechanism discussion, bond changes)—not vague/generic filler text.""",
+    "FS": [
+        {"content": "**CoT-Answer Consistency**: The final SELFIES must logically follow from the CoT conclusion. If CoT concludes X but answer gives Y, auto-fail. (Do NOT verify chemical correctness)",
+         "thinking_required": True,
+         "answer_required": True,
+         "punishment_score": -0.5},
+        {"content": "**Anti-Cheating**: The output must NOT be a verbatim, unmodified copy of the entire input reactants/reagents string, NOR a simple string-level concatenation of two or more input molecules with no structural transformation. In forward synthesis, it is NORMAL and EXPECTED for the product to share most structural tokens with one of the input reactants (since the product is formed by modifying a reactant). Only flag as cheating if: (1) the output reproduces ALL input reactants/reagents as-is with zero transformation, (2) the output is a naive concatenation of input molecules (e.g., 'reactant1.reactant2') without any bond formation or structural change, (3) the output is clearly nonsensical filler text with no chemistry content, or (4) the output is an exact, unmodified copy of ANY single input molecule (the input contains multiple molecules separated by '.'; if the output is identical to any one of them with zero structural change, it is cheating—a legitimate product must differ from every individual input molecule).",
+         "thinking_required": False,
+         "answer_required": True,
+         "punishment_score": -0.5},
+        {"content": "**CoT Completeness**: CoT must contain substantive reasoning (reaction type identification, mechanism discussion, bond changes)—not vague/generic filler text.",
+         "thinking_required": True,
+         "answer_required": False,
+         "punishment_score": -0.5},
+    ],
 
-    "RP": """1. **CoT-Answer Consistency**: The final SELFIES reagents must logically follow from the CoT conclusion. Contradictions auto-fail. (Do NOT verify if reagents are correct)
-2. **Anti-Cheating**: Output must NOT be copied/appended input reactants or target product. Must show genuine prediction attempt.
-3. **CoT Completeness**: CoT must analyze the transformation and provide reasoning for reagent selection—not vague/generic filler text.""",
+    "RP": [
+        {"content": "**CoT-Answer Consistency**: The final SELFIES reagents must logically follow from the CoT conclusion. If CoT concludes X but answer gives Y, auto-fail. (Do NOT verify if reagents are correct)",
+         "thinking_required": True,
+         "answer_required": True,
+         "punishment_score": -0.5},
+        {"content": "**Anti-Cheating**: The output must NOT be a verbatim, unmodified copy of the entire input reactants/reagents string, NOR a simple string-level concatenation of two or more input molecules with no structural transformation. Must show genuine prediction attempt.",
+         "thinking_required": False,
+         "answer_required": True,
+         "punishment_score": -0.5},
+        {"content": "**CoT Completeness**: CoT must analyze the transformation and provide reasoning for reagent selection—not vague/generic filler text.",
+         "thinking_required": True,
+         "answer_required": False,
+         "punishment_score": -0.5},
+    ],
 
-    "RS": """1. **CoT-Answer Consistency**: Final reactants/reagents must logically follow from CoT conclusion. Contradictions auto-fail. (Do NOT verify if retrosynthesis is correct)
-2. **Anti-Cheating**: Output must NOT be copied/appended input product. Must show genuine retrosynthesis attempt.
-3. **CoT Completeness**: CoT must contain retrosynthetic reasoning (disconnection analysis, synthon discussion)—not vague/generic filler text.""",
+    "RS": [
+        {"content": "**CoT-Answer Consistency**: Final reactants/reagents must logically follow from CoT conclusion. If CoT concludes X but answer gives Y, auto-fail. (Do NOT verify if retrosynthesis is correct)",
+         "thinking_required": True,
+         "answer_required": True,
+         "punishment_score": -0.5},
+        {"content": "**Anti-Cheating**: The output must NOT be an EXACT, unmodified copy of the input product SELFIES, NOR a trivial mechanical split/concatenation of the input product—i.e., simply cutting the product SELFIES string into two or more contiguous substrings and joining them with '.' (or reordering/duplicating such substrings) without any real retrosynthetic disconnection. In retrosynthesis, it is NORMAL and EXPECTED for reactants to share large portions of structural tokens with the product (since reactants are structural fragments of the product). However, legitimate retrosynthesis involves breaking specific chemical bonds and adding or modifying functional groups. Only flag as cheating if: (1) the output is a verbatim copy of the input with zero structural changes, (2) the output is a naive split of the input product string into substrings (e.g., taking the first half and the second half of the SELFIES tokens and joining them with '.'), or concatenates the input product with itself or arbitrary fragments, without any evidence of bond-breaking, functional group introduction, or genuine structural transformation, or (3) the output is clearly nonsensical filler text with no chemistry content.",
+         "thinking_required": False,
+         "answer_required": True,
+         "punishment_score": -0.5},
+        {"content": "**CoT Completeness**: CoT must contain retrosynthetic reasoning (disconnection analysis, synthon discussion)—not vague/generic filler text.",
+         "thinking_required": True,
+         "answer_required": False,
+         "punishment_score": -0.5},
+    ],
 
-    "MG": """1. **CoT-Answer Consistency**: Final SELFIES must match the structure described in CoT conclusion. Contradictions auto-fail. (Do NOT verify if SELFIES is chemically correct)
-2. **Anti-Cheating**: Output must be a SELFIES string—not copied input natural language text or generic filler.
-3. **CoT Completeness**: CoT must systematically analyze input description (identifying rings, groups, heteroatoms)—not vague/generic filler text.""",
+    "MG": [
+        {"content": "**CoT-Answer Consistency**: Final SELFIES must match the structure described in CoT conclusion. If CoT concludes X but answer gives Y, auto-fail. (Do NOT verify if SELFIES is chemically correct)",
+         "thinking_required": True,
+         "answer_required": True,
+         "punishment_score": -0.5},
+        {"content": "**Anti-Cheating**: Output must be a SELFIES string—not copied input natural language text or generic filler.",
+         "thinking_required": False,
+         "answer_required": True,
+         "punishment_score": -0.5},
+        {"content": "**CoT Completeness**: CoT must systematically analyze input description (identifying rings, groups, heteroatoms)—not vague/generic filler text.",
+         "thinking_required": True,
+         "answer_required": False,
+         "punishment_score": -0.5},
+    ],
 
-    "PP": """1. **CoT-Answer Consistency**: Final \\boxed{{}} value must align with CoT's estimation/trend. Contradictions auto-fail. (Do NOT verify if the value is accurate)
-2. **Anti-Cheating**: CoT must reference input molecule's structural features—not arbitrary number without any reasoning attempt.
-3. **CoT Completeness**: CoT must contain Structure-Property Relationship analysis (discussing relevant structural factors)—not vague/generic filler text.""",
+    "PP": [
+        {"content": "**CoT-Answer Consistency**: Final \\boxed{{}} value must align with CoT's estimation/trend. If CoT concludes X but answer gives Y, auto-fail. (Do NOT verify if the value is accurate)",
+         "thinking_required": True,
+         "answer_required": True,
+         "punishment_score": -0.5},
+        {"content": "**Anti-Cheating**: CoT must reference input molecule's structural features—not arbitrary number without any reasoning attempt.",
+         "thinking_required": True,
+         "answer_required": True,
+         "punishment_score": -0.5},
+        {"content": "**CoT Completeness**: CoT must contain Structure-Property Relationship analysis (discussing relevant structural factors)—not vague/generic filler text.",
+         "thinking_required": True,
+         "answer_required": False,
+         "punishment_score": -0.5},
+    ],
 
-    "MC": """1. **CoT-Answer Consistency**: Final description must align with structural features identified in CoT. Contradictions auto-fail. (Do NOT verify factual accuracy)
-2. **Anti-Cheating**: Output must contain specific useful information—not generic boilerplate text or repetitive padding.
-3. **CoT Completeness**: CoT must parse the input SELFIES and identify substructures (rings, groups, heteroatoms)—not vague/generic filler text."""
+    "MC": [
+        {"content": "**CoT-Answer Consistency**: Final description must align with structural features identified in CoT. If CoT concludes X but answer gives Y, auto-fail. (Do NOT verify factual accuracy)",
+         "thinking_required": True,
+         "answer_required": True,
+         "punishment_score": -0.5},
+        {"content": "**Anti-Cheating**: The final answer must contain substantive chemical information. Acceptable answers include: naming molecule classes (e.g., 'a glycerophosphocholine', 'a tertiary alcohol'), identifying functional groups, or providing source organism information (e.g., 'a natural product found in Salvia miltiorrhiza with data available.'—the 'found in [organism]' part is the key information). FAIL if the answer strips out all informative content and outputs only a hollow template (e.g., 'The molecule is a natural product with data available.' without specifying which organism, or 'The molecule is a complex organic compound.' with no specifics).",
+         "thinking_required": False,
+         "answer_required": True,
+         "punishment_score": -0.5},
+        {"content": "**CoT Completeness**: CoT must parse the input SELFIES and identify substructures (rings, groups, heteroatoms)—not vague/generic filler text.",
+         "thinking_required": True,
+         "answer_required": False,
+         "punishment_score": -0.5},
+    ],
 }
 
 
@@ -308,46 +434,62 @@ def compute_rule_score(prediction: str, reference: str, task_type: str, mae_scal
 
 # ===== LLM-based Process Judging =====
 
-async def judge_process_async(query: str, thinking: str, prediction: str, task_type: str, client: AsyncOpenAI | None = None) -> dict:
+async def _judge_single_rubric_async(
+    query: str, thinking: str, prediction: str,
+    rubric_text: str, client: AsyncOpenAI,
+    thinking_required: bool = True,
+    answer_required: bool = True,
+) -> dict:
     """
-    Async: Call external LLM judger to evaluate if the reasoning process is reasonable.
-    
+    Async: Judge one single rubric criterion via LLM.
+
     Args:
-        query: The original user question/prompt.
-        thinking: The model's chain of thought reasoning.
-        prediction: The model's final answer/prediction.
-        task_type: The task type (FS, RP, RS, MG, PP, MC) to select appropriate rubric.
-        client: AsyncOpenAI client to use.  Defaults to the first server client.
-    
+        thinking_required: If True, CoT is shown to the judger.
+                           If False, CoT is hidden from the judger
+                           to prevent the model from using CoT to hack the judger.
+        answer_required:   If True, the final answer is shown to the judger.
+                           If False, the answer is hidden so the judger
+                           focuses purely on reasoning quality.
+
+    Template selection:
+        thinking=T, answer=T → judge_template          (CoT + Answer)
+        thinking=F, answer=T → judge_template_no_cot    (Answer only)
+        thinking=T, answer=F → judge_template_no_answer (CoT only)
+
     Returns:
-        dict: {"process_valid": bool, "judge_explain": str}
+        dict: {"result": bool, "explain": str}
     """
-    if client is None:
-        client = _server_clients[0]
-    rubric = rubrics.get(task_type, "")
-    if not rubric:
-        raise ValueError(f"Unknown task type: {task_type}")
-    
-    prompt = judge_template.format(
-        query=query,
-        thinking_content=thinking,
-        answer_content=prediction,
-        rubric=rubric
-    )
-    
+    if thinking_required and answer_required:
+        prompt = judge_template.format(
+            query=query,
+            thinking_content=thinking,
+            answer_content=prediction,
+            rubric=rubric_text,
+        )
+    elif not thinking_required and answer_required:
+        prompt = judge_template_no_cot.format(
+            query=query,
+            answer_content=prediction,
+            rubric=rubric_text,
+        )
+    else:  # thinking_required=True, answer_required=False
+        prompt = judge_template_no_answer.format(
+            query=query,
+            thinking_content=thinking,
+            rubric=rubric_text,
+        )
+
     response = await client.chat.completions.create(
         model=MODEL_NAME,
-        messages=[
-            {"role": "user", "content": prompt}
-        ],
+        messages=[{"role": "user", "content": prompt}],
         temperature=0.0,
         max_tokens=MAX_TOKENS,
         timeout=TIMEOUT_SECONDS,
-        reasoning_effort="high"
+        reasoning_effort="high",
     )
-    
+
     content = response.choices[0].message.content.strip()
-    
+
     # Try to extract JSON from markdown code blocks
     if "```json" in content:
         json_match = re.search(r'```json\s*(.*?)\s*```', content, re.DOTALL)
@@ -357,23 +499,86 @@ async def judge_process_async(query: str, thinking: str, prediction: str, task_t
         json_match = re.search(r'```\s*(.*?)\s*```', content, re.DOTALL)
         if json_match:
             content = json_match.group(1)
-    
+
     # Parse JSON result
     try:
         result = json.loads(content)
-        process_valid = result.get("result", False)
-        judge_explain = result.get("explain", "")
-        return {"process_valid": process_valid, "judge_explain": judge_explain}
+        return {"result": bool(result.get("result", False)),
+                "explain": result.get("explain", "")}
     except json.JSONDecodeError:
-        # Fallback: try to find true/false pattern in the response
         content_lower = content.lower()
         if '"result": true' in content_lower or '"result":true' in content_lower:
-            return {"process_valid": True, "judge_explain": f"Parsed from raw: {content[:200]}"}
+            return {"result": True, "explain": f"Parsed from raw: {content[:200]}"}
         elif '"result": false' in content_lower or '"result":false' in content_lower:
-            return {"process_valid": False, "judge_explain": f"Parsed from raw: {content[:200]}"}
+            return {"result": False, "explain": f"Parsed from raw: {content[:200]}"}
         else:
             print(f"[WARNING] Cannot parse judger response: {content[:200]}")
-            return {"process_valid": False, "judge_explain": f"Parse failed: {content[:200]}"}
+            return {"result": False, "explain": f"Parse failed: {content[:200]}"}
+
+
+async def judge_process_async(query: str, thinking: str, prediction: str, task_type: str, client: AsyncOpenAI | None = None) -> dict:
+    """
+    Async: Judge each rubric criterion independently, then aggregate.
+
+    All criteria must pass for the overall result to be True.
+
+    Args:
+        query: The original user question/prompt.
+        thinking: The model's chain of thought reasoning.
+        prediction: The model's final answer/prediction.
+        task_type: The task type (FS, RP, RS, MG, PP, MC) to select appropriate rubrics.
+        client: AsyncOpenAI client to use.  Defaults to the first server client.
+
+    Returns:
+        dict: {"process_valid": bool, "judge_explain": str,
+               "per_rubric": [{"rubric": str, "result": bool, "explain": str}, ...]}
+    """
+    if client is None:
+        client = _server_clients[0]
+    rubric_list = rubrics.get(task_type)
+    if not rubric_list:
+        raise ValueError(f"Unknown task type: {task_type}")
+
+    # Judge each rubric criterion concurrently
+    coros = [
+        _judge_single_rubric_async(
+            query, thinking, prediction,
+            rubric_item["content"], client,
+            thinking_required=rubric_item.get("thinking_required", True),
+            answer_required=rubric_item.get("answer_required", True),
+        )
+        for rubric_item in rubric_list
+    ]
+    per_rubric_results = await asyncio.gather(*coros)
+
+    # Aggregate: all must pass; track worst punishment among failures
+    per_rubric = []
+    all_pass = True
+    explains = []
+    failed_punishment_scores = []
+    for rubric_item, res in zip(rubric_list, per_rubric_results):
+        passed = res["result"]
+        punishment = rubric_item.get("punishment_score", -0.5)
+        per_rubric.append({"rubric": rubric_item["content"],
+                           "thinking_required": rubric_item.get("thinking_required", True),
+                           "punishment_score": punishment,
+                           "result": passed, "explain": res["explain"]})
+        if not passed:
+            all_pass = False
+            failed_punishment_scores.append(punishment)
+            explains.append(f"[FAIL] {res['explain']}")
+        else:
+            explains.append(f"[PASS] {res['explain']}")
+
+    # Worst (minimum) punishment score among all failed rubrics
+    worst_punishment = min(failed_punishment_scores) if failed_punishment_scores else 0.0
+
+    return {
+        "process_valid": all_pass,
+        "punishment_score": worst_punishment,
+        "judge_explain": " | ".join(explains),
+        "per_rubric": per_rubric,
+    }
 
 
 def judge_process(query: str, thinking: str, prediction: str, task_type: str) -> dict:
@@ -426,6 +631,7 @@ async def _score_single_item_async(
             )
 
             # LLM judge process reasonableness (routed to the assigned server)
+            # Each rubric criterion is judged independently; all must pass.
             judge_result = await judge_process_async(
                 item["prompt"],
                 item["thinking"],
@@ -436,20 +642,25 @@ async def _score_single_item_async(
 
             process_valid = judge_result["process_valid"]
             judge_explain = judge_result["judge_explain"]
+            per_rubric = judge_result.get("per_rubric", [])
+            punishment = judge_result.get("punishment_score", -0.5)
 
             # Step 3: Combine scores
-            # If process is not valid, return -0.5 (process reward penalty)
             # If process is valid, return the rule-based score
+            # If process is not valid, return the worst punishment score
+            # among all failed rubrics
             if process_valid:
                 final_score = rule_score
             else:
-                final_score = -0.5
+                final_score = punishment
 
             return idx, {
                 "score": final_score,
                 "rule_score": rule_score,
                 "process_valid": process_valid,
-                "judge_explain": judge_explain
+                "punishment_score": punishment,
+                "judge_explain": judge_explain,
+                "per_rubric": per_rubric,
             }
 
         except Exception as e:
@@ -473,7 +684,8 @@ async def compute_score_batch_async(data_sources, solution_strs, ground_truths, 
     This function:
     1. Uses rule-based scoring (FTS, MAE, METEOR) to evaluate final answer correctness
     2. Uses LLM judging to evaluate reasoning process quality
-    3. Combines both: only valid processes receive the rule-based score; invalid processes get -0.5
+    3. Combines both: only valid processes receive the rule-based score;
+       invalid processes receive a dynamic punishment score (worst among failed rubrics)
     
     Args:
         data_sources: List of data sources.
@@ -486,10 +698,13 @@ async def compute_score_batch_async(data_sources, solution_strs, ground_truths, 
 
     Returns:
         List[dict]: A list of dicts for each sample, each containing:
-            - "score": float (final combined reward: rule_score if process valid, else -0.5)
+            - "score": float (final combined reward: rule_score if process valid,
+              else worst punishment_score among failed rubrics)
             - "rule_score": float or None (rule-based correctness score)
             - "process_valid": bool or None (LLM judge result: True if reasoning is reasonable)
+            - "punishment_score": float or None (worst punishment among failed rubrics)
             - "judge_explain": str (explanation from LLM judge or error message)
+            - "per_rubric": list or None (per-rubric judgment details)
         
         Note: verl's BatchRewardManager will automatically extract "score" as the reward,
         and save other fields to the rollout jsonl files.
@@ -621,14 +836,14 @@ if __name__ == "__main__":
         Adapts jsonl fields → verl-style inputs, calls the canonical scoring function,
         then re-attaches id/status/original_score/task_type for output bookkeeping.
         """
-        sample_ids = [s[0] for s in all_samples]
-        samples = [s[1] for s in all_samples]
+        sample_ids  = [s[0] for s in all_samples]
+        samples     = [s[1] for s in all_samples]
 
         # Build verl-style input lists
-        data_sources = [s.get("source_file", "") for s in samples]
+        data_sources  = [s.get("source_file", "") for s in samples]
         solution_strs = [s["output"] for s in samples]
         ground_truths = [s.get("gts", "") for s in samples]
-        extra_infos = [
+        extra_infos   = [
             {"prompt": s["input"], "task_name": s.get("task_type", "RS")}
             for s in samples
         ]
@@ -684,21 +899,32 @@ if __name__ == "__main__":
         minus1_samples = [r for r in successful if r.get("score") == -1.0]
         exception_samples = [r for r in minus1_samples
                              if str(r.get("judge_explain", "")).startswith("Exception")]
-        format_errors = len(minus1_samples) - len(exception_samples)
+        format_errors  = len(minus1_samples) - len(exception_samples)
         llm_exceptions = len(exception_samples)
-        process_failed = sum(1 for r in successful if r.get("score") == -0.5)
         # rule_scored = reached rule scoring stage (process_valid True or False, but not format/exception error)
-        rule_scored = [r for r in successful if r.get("rule_score") is not None]
-        truly_valid = [r for r in rule_scored if r.get("process_valid") is True]
+        rule_scored    = [r for r in successful if r.get("rule_score") is not None]
+        truly_valid    = [r for r in rule_scored if r.get("process_valid") is True]
+        process_failed_samples = [r for r in rule_scored if r.get("process_valid") is False]
+        process_failed = len(process_failed_samples)
 
         total = len(successful)
         print(f"\nScore Summary ({total} samples):")
         print(f"  Format errors  (score=-1.0):  {format_errors}")
         print(f"  LLM exceptions (score=-1.0):  {llm_exceptions}")
-        print(f"  Process invalid (score=-0.5): {process_failed}")
+        print(f"  Process invalid (punished):   {process_failed}")
         print(f"  Process valid  (rule scored): {len(truly_valid)}")
         print(f"  [Check] {format_errors}+{llm_exceptions}+{process_failed}+{len(truly_valid)} = "
               f"{format_errors+llm_exceptions+process_failed+len(truly_valid)} (expect {total})")
+
+        # Show punishment score distribution for process-invalid samples
+        if process_failed_samples:
+            punishment_dist = {}
+            for r in process_failed_samples:
+                ps = r.get("punishment_score", -0.5)
+                punishment_dist[ps] = punishment_dist.get(ps, 0) + 1
+            print(f"\n  Punishment score distribution (process invalid):")
+            for ps, cnt in sorted(punishment_dist.items()):
+                print(f"    score={ps}: {cnt}")
 
         # Per-server exception breakdown (useful for diagnosing unstable servers)
         if llm_exceptions > 0:
@@ -713,7 +939,7 @@ if __name__ == "__main__":
                 else:
                     url = "unknown"
                 server_exc[url] = server_exc.get(url, 0) + 1
-            print("\n  Exception breakdown by server:")
+            print(f"\n  Exception breakdown by server:")
             for url, cnt in sorted(server_exc.items(), key=lambda x: -x[1]):
                 print(f"    {url}: {cnt}")
 
@@ -807,12 +1033,12 @@ if __name__ == "__main__":
         _server_semaphores = None  # will be recreated lazily inside the event loop
 
     if args.debug:
-        args.input = "data/chemistry_test/debug_samples.jsonl"
-        args.output = "data/chemistry_test/debug_mix_env_output.jsonl"
+        args.input = "data/chemistry_test/judger_test/debug_samples.jsonl"
+        args.output = "data/chemistry_test/judger_test/debug_mix_env_output.jsonl"
 
     # Resolve paths
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    project_dir = os.path.join(base_dir, "../..")
+    project_dir = os.path.join(base_dir, "../../..")
     input_path = os.path.join(project_dir, args.input) if not os.path.isabs(args.input) else args.input
     output_path = os.path.join(project_dir, args.output) if not os.path.isabs(args.output) else args.output
     input_path = os.path.abspath(input_path)
@@ -836,8 +1062,8 @@ if __name__ == "__main__":
         if not await test_connection():
             print("\nOne or more connection tests failed. Please check:")
             print(f"  1. Server URLs: {OPENAI_API_BASES}")
-            print("  2. Network connectivity")
-            print("  3. API key validity")
+            print(f"  2. Network connectivity")
+            print(f"  3. API key validity")
             return
 
         # Handle retry-errors
@@ -916,7 +1142,9 @@ if __name__ == "__main__":
                             "score": score,
                             "rule_score": result.get("rule_score"),
                             "process_valid": result.get("process_valid"),
+                            "punishment_score": result.get("punishment_score"),
                             "judge_explain": result.get("judge_explain"),
+                            "per_rubric": result.get("per_rubric"),
                             "elapsed_seconds": result.get("elapsed_seconds"),
                         }, ensure_ascii=False) + "\n")
                     else:

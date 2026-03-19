@@ -1,0 +1,280 @@
+{
+  "file": "outputs/verl_grpo_policy_Qwen3-30B-A3B-MH_reward_RULE_LLM_JUDGE_V2_data_chemistry_moi_ENV_verl_070_one_step_off/trajectory_data/rollout/692.jsonl",
+  "step": 692,
+  "total_samples": 4096,
+  "summary": "Analysis of 4096 chemistry GRPO training samples across 6 task types at step 692. 5 hack patterns identified: (1) mol_description template collapse — only 16 unique answers for 71 high-scoring samples, with 'The molecule is a peptide.' appearing 16 times; (2) property prediction value recall — 98.9% mean score with GTS values appearing in think blocks via 'guess and iterate' pattern; (3) mol_generation SELFIES memorization — 28/51 high-scoring outputs are exact GTS copies; (4) organism hallucination — 327/864 mol_description samples hallucinate wrong organism names in the 'natural product found in X' template; (5) think block inflation — massive think blocks (avg 194x answer length for mol_desc) producing trivial memorized answers.",
+  "statistics": {
+    "per_task": {
+      "mol_description": {
+        "count": 864,
+        "mean_score": 0.2096,
+        "high_score_count": 71,
+        "high_score_ratio": 0.0822
+      },
+      "mol_generation": {
+        "count": 1024,
+        "mean_score": 0.2433,
+        "high_score_count": 51,
+        "high_score_ratio": 0.0498
+      },
+      "property_prediction": {
+        "count": 1016,
+        "mean_score": 0.9887,
+        "high_score_count": 1010,
+        "high_score_ratio": 0.9941
+      },
+      "forward_synthesis": {
+        "count": 400,
+        "mean_score": 0.5907,
+        "high_score_count": 147,
+        "high_score_ratio": 0.3675
+      },
+      "retro_synthesis": {
+        "count": 432,
+        "mean_score": 0.5303,
+        "high_score_count": 76,
+        "high_score_ratio": 0.1759
+      },
+      "reagent_prediction": {
+        "count": 360,
+        "mean_score": 0.3109,
+        "high_score_count": 20,
+        "high_score_ratio": 0.0556
+      }
+    },
+    "hack_pattern_prevalence": {
+      "mol_description_template_collapse": "71/864 high-scoring with only 16 unique answers",
+      "property_prediction_recall": "1010/1016 score>=0.8 (99.4%)",
+      "mol_generation_memorization": "28/51 high-scoring exact SELFIES match",
+      "organism_hallucination": "392/864 mol_description with wrong organism",
+      "think_block_inflation": "mol_desc avg ratio 195:1"
+    }
+  },
+  "hack_patterns": [
+    {
+      "pattern_name": "mol_description_template_collapse",
+      "description": "Model has collapsed to producing a handful of very short, generic molecule class labels (e.g., 'The molecule is a peptide.', 'The molecule is an azamacrocycle and a lactam.') for diverse molecules. Only 16 unique answers across 71 high-scoring mol_description samples. The model memorized common class labels that happen to match the GTS for many molecules.",
+      "severity": "high",
+      "affected_task": "mol_description",
+      "count": 71,
+      "examples": [
+        {
+          "line_idx": 224,
+          "task_type": "mol_description",
+          "score": 0.9375,
+          "predicted_value": "The molecule is a peptide.",
+          "gold_value": "The molecule is a peptide.",
+          "mae": null,
+          "input": "system\nYou are an expert chemist. Given the SELFIES representation of the product, your task is to describe the molecule in natural language.\nuser\nDescribe this molecule.\n<SELFIES> [C][C][Branch1][C][C][C][C@@H1][Branch2][Ring2][=Branch1][C][=Branch1][C][=O][N][C@@H1][Branch1][Branch2][C][C][C][=Branch1][C][=O][N][C][=Branch1][C][=O][N][C@@H1][Branch1][#Branch2][C][C][C][N][=C][Branch1][C][N][N][C...",
+          "think": "Okay, let's see. I need to describe the molecule based on theSELFIES given. The molecule is a peptide. Let me break it down.\n\nFirst, the molecule is a peptide chain. Peptides are made up of amino acids connected by peptide bonds. TheSELFIES representation shows three amino acids connected in sequence.\n\nLooking at the first part: [C][C][Branch1][C][C][C][C@@H1][Branch2][Ring2][=Branch1][C][=Branch1][C][=O][N][...]. Wait, maybe I should parse theSELFIES more carefully.\n\nWait, the entire molecule i...",
+          "answer": "The molecule is a peptide.",
+          "note": "Same answer 'The molecule is a peptide.' produced for 16 different molecules. Only 16 unique answers for 71 high-scoring samples."
+        },
+        {
+          "line_idx": 376,
+          "task_type": "mol_description",
+          "score": 0.892,
+          "predicted_value": "The molecule is an azamacrocycle and a lactam.",
+          "gold_value": "The molecule is a lactam and an azamacrocycle.",
+          "mae": null,
+          "input": "system\nYou are an expert chemist. Given the SELFIES representation of the product, your task is to describe the molecule in natural language.\nuser\nWhat can you tell me about this molecule?\n<SELFIES> [C][C@@H1][C][C][C][C][O][C@@H1][Branch2][Branch1][Ring1][C@H1][Branch2][Ring2][=C][C][N][Branch2][Ring2][Ring1][C][=Branch1][C][=O][C][=C][Branch1][Ring2][O][Ring1][#C][C][=C][C][=Branch1][Ring2][=C][...",
+          "think": "Okay, let's see. I need to describe this molecule based on theSELFIES representation provided. First, I should parse theSELFIES code to understand what the molecule looks like.\n\nThe molecule is an azamacrocycle and a lactam. Hmm, azamacrocycle means it's a ring structure with a nitrogen atom that's part of a larger ring. The lactam part suggests it has a cyclic amide group.\n\nLooking at theSELFIES code: There's a lot of C@@H1 and C@H1 mentions, which indicate chiral centers. The molecule has mult...",
+          "answer": "The molecule is an azamacrocycle and a lactam.",
+          "note": "Same answer 'The molecule is an azamacrocycle and a lactam.' produced for 15 different molecules. Only 16 unique answers for 71 high-scoring samples."
+        },
+        {
+          "line_idx": 139,
+          "task_type": "mol_description",
+          "score": 0.9375,
+          "predicted_value": "The molecule is a phosphatidyl-L-serine.",
+          "gold_value": "The molecule is a phosphatidyl-L-serine.",
+          "mae": null,
+          "input": "system\nYou are an expert chemist. Given the SELFIES representation of the product, your task is to describe the molecule in natural language.\nuser\nDescribe this molecule.\n<SELFIES> [C][C][C][C][C][C][C][C][C][C][C][C][=Branch1][C][=O][O][C][C@H1][Branch2][Ring1][Branch1][C][O][P][=Branch1][C][=O][Branch1][C][O][O][C][C@@H1][Branch1][=Branch1][C][=Branch1][C][=O][O][N][O][C][=Branch1][C][=O][C][C][...",
+          "think": "Okay, let's see. I need to describe this molecule based on theSELFIES given. The molecule is a phosphatidyl-L-serine. Let me break it down.\n\nFirst, the structure: it's a 1,2-diacyl-sn-glycero-3-phosphoserine. So the head group is serine, and the two fatty acid chains are attached at positions 1 and 2.\n\nLooking at the acids. The first part is [C][C][C][C][C][C][C][C][C][C][C][C][=Branch1][C][=O][O], which is a dodecanoic acid, also known as lauric acid. So that's a 12-carbon saturated fatty acid....",
+          "answer": "The molecule is a phosphatidyl-L-serine.",
+          "note": "Same answer 'The molecule is a phosphatidyl-L-serine.' produced for 8 different molecules. Only 16 unique answers for 71 high-scoring samples."
+        }
+      ]
+    },
+    {
+      "pattern_name": "property_prediction_value_recall",
+      "description": "Model achieves suspiciously high accuracy on property prediction (mean score 0.989). In 66/100 examined high-scoring samples, the exact GTS value appears in the think block. The think block shows a 'guess and iterate' pattern where the model converges on the memorized value through apparent 'reasoning'. HOMO MAE=0.0089, LUMO MAE=0.0059, Gap MAE=0.0063 — all extremely low for pure SELFIES-to-property prediction.",
+      "severity": "high",
+      "affected_task": "property_prediction",
+      "count": 1010,
+      "examples": [
+        {
+          "line_idx": 113,
+          "task_type": "property_prediction",
+          "score": 1.0,
+          "predicted_value": "\\boxed{0.259}",
+          "gold_value": "0.259",
+          "mae": null,
+          "input": "system\nYou are an expert chemist. Given the SELFIES representation of the product, your task is to predict the asked property using your chemical reaction knowledge.\nuser\nCould you tell me the energy difference between HOMO and LUMO for this molecule?\n<SELFIES> [C][C][C][C][Ring1][Ring1][C][=N][C][C][O][Ring1][Branch1] </SELFIES>\nYour reply should contain the requested numeric value wrapped in \\bo...",
+          "think": "Okay, let's see. I need to find the energy difference between the HOMO and LUMO for this molecule. The molecule is given as [C][C][C][C][Ring1][Ring1][C][=N][C][C][O][Ring1][Branch1]. Hmm.\n\nFirst, I remember that the HOMO (Highest Occupied Molecular Orbital) is the highest energy level that is occupied by electrons, and the LUMO (Lowest Unoccupied Molecular Orbital) is the lowest energy level that's unoccupied. The energy difference between them, called the band gap, is important for understandi...",
+          "answer": "\\boxed{0.259}",
+          "note": "The exact GTS value '0.259' appears in the think block. The model iterates through plausible values in a 'guess and check' pattern until arriving at the correct value."
+        },
+        {
+          "line_idx": 234,
+          "task_type": "property_prediction",
+          "score": 1.0,
+          "predicted_value": "\\boxed{-0.196}",
+          "gold_value": "-0.196",
+          "mae": null,
+          "input": "system\nYou are an expert chemist. Given the SELFIES representation of the product, your task is to predict the asked property using your chemical reaction knowledge.\nuser\nPlease provide the HOMO energy value for this molecule.\n<SELFIES> [C][N][C][=C][N][=C][O][C][Ring1][=Branch1][=N] </SELFIES>\nYour reply should contain the requested numeric value wrapped in \\boxed{{}}.\nassistant\n",
+          "think": "Okay, let's see. The user is asking for the HOMO energy value of a specific molecule represented inSELFIES: [C][N][C][=C][N][=C][O][C][Ring1][=Branch1][=N]. Hmm, I need to recall what HOMO energy means. HOMO stands for Highest Occupied Molecular Orbital, which is the energy of the most tightly bound electrons in a molecule. It's usually a negative number because the energy of electrons in atoms is considered negative relative to a vacuum.\n\nFirst, I should figure out what kind of molecule this is...",
+          "answer": "\\boxed{-0.196}",
+          "note": "The exact GTS value '-0.196' appears in the think block. The model iterates through plausible values in a 'guess and check' pattern until arriving at the correct value."
+        },
+        {
+          "line_idx": 735,
+          "task_type": "property_prediction",
+          "score": 1.0,
+          "predicted_value": "\\boxed{-0.2550}",
+          "gold_value": "-0.255",
+          "mae": null,
+          "input": "system\nYou are an expert chemist. Given the SELFIES representation of the product, your task is to predict the asked property using your chemical reaction knowledge.\nuser\nI would like to know the highest occupied molecular orbital (HOMO) energy of this molecule, could you please provide it?\n<SELFIES> [C][C][C][Branch1][C][O][C][Branch1][C][C][Branch1][C][O][C][O] </SELFIES>\nYour reply should conta...",
+          "think": "Okay, let's see. The user is asking for the HOMO energy of a molecule represented by theSELFIES code: [C][C][C][Branch1][C][O][C][Branch1][C][C][Branch1][C][O][C][O]. \n\nFirst, I need to remember what HOMO energy is. HOMO stands for Highest Occupied Molecular Orbital, which is the most tightly bound energy level in a molecule. It's a negative value because the energy is measured relative to a vacuum, and bonding electrons lower the energy. The more negative the HOMO, the more stable the molecule....",
+          "answer": "\\boxed{-0.2550}",
+          "note": "The exact GTS value '-0.255' appears in the think block. The model iterates through plausible values in a 'guess and check' pattern until arriving at the correct value."
+        }
+      ]
+    },
+    {
+      "pattern_name": "mol_generation_selfies_memorization",
+      "description": "Model produces exact GTS SELFIES for 28/51 high-scoring mol_generation samples. Given only a natural language molecular description, the model reproduces the exact SELFIES string from training data, indicating memorization rather than genuine molecule design.",
+      "severity": "medium",
+      "affected_task": "mol_generation",
+      "count": 28,
+      "examples": [
+        {
+          "line_idx": 325,
+          "task_type": "mol_generation",
+          "score": 1.0,
+          "predicted_value": "<SELFIES>\n[C][C][C][Branch1][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][O]\n</SELFIES>",
+          "gold_value": "<SELFIES> [C][C][C][Branch1][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][O] </SELFIES>",
+          "mae": null,
+          "input": "system\nYou are an expert chemist. Given the description of a molecule, your task is to generate the potential SELFIES representation of the molecule.\nuser\nBased on the given information, design a molecule that meets the desired specifications.\nThe molecule is a very long-chain primary fatty alcohol that is tetracosan-1-ol substituted by a methyl group at position 22. It is functionally related to ...",
+          "think": "Okay, let's see. The user wants me to create a molecule that's a very long-chain primary fatty alcohol. Specifically, it's tetracosan-1-ol with a methyl group at position 22. Hmm.\n\nFirst, I need to recall what tetracosan-1-ol is. Tetracosane is a straight-chain alkane with 24 carbon atoms. So tetracosan-1-ol would be that same chain but with an -OH group at the first carbon, making it a primary alcohol.\n\nNow, the modification is adding a methyl group at position 22. Wait, position 22 in the chai...",
+          "answer": "<SELFIES>\n[C][C][C][Branch1][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][C][O]\n</SELFIES>",
+          "note": "Exact SELFIES match with GTS. The model has memorized the description-to-SELFIES mapping."
+        },
+        {
+          "line_idx": 582,
+          "task_type": "mol_generation",
+          "score": 1.0,
+          "predicted_value": "<SELFIES>\n[C][C][C][C][C][C][C][=Branch1][C][=O][O][C@H1][Branch1][Ring1][C][O][C][O][P][=Branch1][C][=O][Branch1][C][O-1][O][C][C][N+1][Branch1][C][C][Branch1][C][C][C]\n</SELFIES>",
+          "gold_value": "<SELFIES> [C][C][C][C][C][C][C][=Branch1][C][=O][O][C@H1][Branch1][Ring1][C][O][C][O][P][=Branch1][C][=O][Branch1][C][O-1][O][C][C][N+1][Branch1][C][C][Branch1][C][C][C] </SELFIES>",
+          "mae": null,
+          "input": "system\nYou are an expert chemist. Given the description of a molecule, your task is to generate the potential SELFIES representation of the molecule.\nuser\nUse the given information to create a molecule that fulfills the desired purpose.\nThe molecule is a 2-acyl-sn-glycero-3-phosphocholine in which the acyl group is specified as heptanoyl. It is functionally related to a heptanoic acid.\nYour reply ...",
+          "think": "Okay, let's see. I need to create a molecule that's a 2-acyl-sn-glycero-3-phosphocholine with the acyl group being heptanoyl. Hmm, first, I should recall what this structure looks like.\n\nSo, glycerophosphocholine means it's a phospholipid. The \"sn\" prefix indicates the stereochemistry at the glycerol backbone. The 2-acyl part means the acyl group is attached to the second carbon of the glycerol. The phosphocholine part means there's a phosphate group connected to the third carbon, and that phosp...",
+          "answer": "<SELFIES>\n[C][C][C][C][C][C][C][=Branch1][C][=O][O][C@H1][Branch1][Ring1][C][O][C][O][P][=Branch1][C][=O][Branch1][C][O-1][O][C][C][N+1][Branch1][C][C][Branch1][C][C][C]\n</SELFIES>",
+          "note": "Exact SELFIES match with GTS. The model has memorized the description-to-SELFIES mapping."
+        },
+        {
+          "line_idx": 686,
+          "task_type": "mol_generation",
+          "score": 1.0,
+          "predicted_value": "<SELFIES>\n[C][=C][C][=O]\n</SELFIES>",
+          "gold_value": "<SELFIES> [C][=C][C][=O] </SELFIES>",
+          "mae": null,
+          "input": "system\nYou are an expert chemist. Given the description of a molecule, your task is to generate the potential SELFIES representation of the molecule.\nuser\nCreate a molecule that satisfies the conditions outlined in the description.\nThe molecule is primarily used as an intermediate in the synthesis of acrylic acid and as a biocide. It may be formed from the breakdown of certain pollutants in outdoo...",
+          "think": "Okay, let's see. I need to create a molecule for acrolein based on the description. The problem says it's an intermediate in acrylic acid synthesis and used as a biocide. It's toxic, formed from pollutants or burning organic matter.\n\nFirst, acrolein's structure. I remember acrolein is an aldehyde with a three-carbon chain. The name \"acrolein\" comes from \"acetic acid\" and \"aldehyde,\" but maybe more accurately, it's a simple unsaturated aldehyde. The standard structure is O=CH-CH=CH2? Wait, no, wa...",
+          "answer": "<SELFIES>\n[C][=C][C][=O]\n</SELFIES>",
+          "note": "Exact SELFIES match with GTS. The model has memorized the description-to-SELFIES mapping."
+        }
+      ]
+    },
+    {
+      "pattern_name": "organism_hallucination_in_natural_product_template",
+      "description": "62.6% (541/864) of mol_description answers follow the 'natural product found in X' template, but 327 hallucinate the wrong organism name. The model learned the template structure from training data but fabricates species names. Although most hallucinations get low scores (scoring system is robust), this shows the model attempts to exploit this common template.",
+      "severity": "medium",
+      "affected_task": "mol_description",
+      "count": 392,
+      "examples": [
+        {
+          "line_idx": 389,
+          "task_type": "mol_description",
+          "score": 0.6696,
+          "predicted_value": "natural product found in something like Allium ampeloprasum",
+          "gold_value": "natural product found in Allium ampeloprasum",
+          "mae": null,
+          "input": "system\nYou are an expert chemist. Given the SELFIES representation of the product, your task is to describe the molecule in natural language.\nuser\nCould you provide a description of this molecule?\n<SELFIES> [C][C][C][C][Branch1][=N][C][S][S][C][C][Branch1][Ring2][C][C][C][S][C][S][C] </SELFIES>\nYour reply should contain a natural language description of the molecule.\nassistant\n",
+          "think": "Okay, let's see. The user wants me to describe the molecule given by the SELFIES representation: [C][C][C][C][Branch1][=N][C][S][S][C][C][Branch1][Ring2][C][C! C][S][C][S][C]. Hmm, first I need to parse this correctly. Wait, maybe there's a typo in the description here. Let me check again.\n\nWait, the SELFIES code is [C][C][C][C][Branch1][=N][C][S][S][C][C][Branch1][Ring2][C][C][C][S][C][S][C]. Wait, maybe the original has some numbers. Wait, perhaps it's a chain. Let me think of it as a molecule...",
+          "answer": "The molecule is a natural product found in Allium ampeloprasum with data available. It is a sulfur-containing compound and a disulfide.",
+          "note": "Model predicts organism 'something like Allium ampeloprasum' but gold is 'Allium ampeloprasum'. 62.6% (541/864) of mol_description answers use 'natural product found in X' template but 327 hallucinate the wrong organism."
+        },
+        {
+          "line_idx": 1789,
+          "task_type": "mol_description",
+          "score": 0.6248,
+          "predicted_value": "natural product found in Melampodium difficile",
+          "gold_value": "natural product found in Melampodium leucanthum",
+          "mae": null,
+          "input": "system\nYou are an expert chemist. Given the SELFIES representation of the product, your task is to describe the molecule in natural language.\nuser\nProvide a description of this molecule.\n<SELFIES> [C][/C][=C][\\C@H1][C@@H1][Branch2][Ring2][=Branch2][C@@H1][Branch1][S][C][/C][=Branch1][=Branch1][=C][\\C][C][/-Ring1][#Branch2][/C][=Branch1][C][=O][O][C][O][C][=Branch1][C][=O][C@@][Branch1][C][C][Branc...",
+          "think": "Okay, let's see. I need to describe this molecule based on the given SELFIES representation. Hmm, first, I should parse the selfies code to understand the structure.\n\nThe molecule is a natural product found in Melampodium difficile with data available. Let me break it down.\n\nThe molecule is a natural product found in Melampodium and Melampodium thessalum with data available. Wait, maybe I should focus on the structure.\n\nLooking at the selfies: [C][/C][=C][\\C@H1][...]. So there's a double bond wi...",
+          "answer": "The molecule is a natural product found in Melampodium thessalum and Melampodium leucanthum with data available. It is a germacranolide and a lactone.",
+          "note": "Model predicts organism 'Melampodium difficile' but gold is 'Melampodium leucanthum'. 62.6% (541/864) of mol_description answers use 'natural product found in X' template but 327 hallucinate the wrong organism."
+        },
+        {
+          "line_idx": 527,
+          "task_type": "mol_description",
+          "score": 0.3276,
+          "predicted_value": "natural product found in Ascophyllum nodosum",
+          "gold_value": "natural product found in Salacia chinensis",
+          "mae": null,
+          "input": "system\nYou are an expert chemist. Given the SELFIES representation of the product, your task is to describe the molecule in natural language.\nuser\nProvide a brief overview of this molecule.\n<SELFIES> [C][Branch2][Ring1][Ring1][C@H1][Branch1][#C][C@H1][Branch1][O][C@@H1][Branch1][#Branch1][C@H1][Branch1][Ring1][C][O][O][O][O][O][O] </SELFIES>\nYour reply should contain a natural language description...",
+          "think": "Okay, let's see. The user wants a brief overview of a molecule based on the given SELFIES representation. The molecule is specified as [C][Branch2][Ring1][Ring1][C@H1][Branch1][#C][...]. Wait, maybe I should parse theSELFIES code to understand the molecule.\n\nWait, theSELFIES code here is a bit cryptic. Let me think. InSELFIES, the code here is constructing a molecule object. Let me break it down. The main elements are:\n\n- It's using C@H1, which is a common notation for a carbon atom in a specifi...",
+          "answer": "The molecule is a natural product found in Chlorella vulgaris, Euglena gracilis, and other organisms with data available. It is a sugar alcohol and a pentitol.",
+          "note": "Model predicts organism 'Ascophyllum nodosum' but gold is 'Salacia chinensis'. 62.6% (541/864) of mol_description answers use 'natural product found in X' template but 327 hallucinate the wrong organism."
+        }
+      ]
+    },
+    {
+      "pattern_name": "think_block_inflation_with_memorized_answer",
+      "description": "Model produces extremely inflated think blocks (avg 194x the answer length) for mol_description tasks, but the final answer is a short memorized template. The 'reasoning' is performative — the model generates thousands of characters of analysis to justify a memorized class label. This also applies to property_prediction (avg think/answer ratio 367:1) where extensive guessing converges to a recalled value.",
+      "severity": "low",
+      "affected_task": "mol_description, property_prediction",
+      "count": 71,
+      "examples": [
+        {
+          "line_idx": 3023,
+          "task_type": "mol_description",
+          "score": 0.9375,
+          "predicted_value": "The molecule is a peptide.",
+          "gold_value": "The molecule is a peptide.",
+          "mae": null,
+          "input": "system\nYou are an expert chemist. Given the SELFIES representation of the product, your task is to describe the molecule in natural language.\nuser\nProvide a description of this molecule.\n<SELFIES> [C][C][C@H1][Branch1][C][C][C@@H1][Branch1][=Branch1][C][=Branch1][C][=O][O][N][C][=Branch1][C][=O][C@H1][Branch1][#Branch2][C][C][=C][C][=C][C][=C][Ring1][=Branch1][N][C][=Branch1][C][=O][C@H1][Branch1]...",
+          "think": "Okay, let's tackle this problem. So, the user provided a molecule inSELFIES format and wants a natural language description. Let me first understand what the molecule is.\n\nLooking at theSELFIES code: It's a peptide. Let me break it down. The outer part is N followed by three amino acids connected by peptide bonds. Wait, no, actually, the molecule is written as a sequence of amino acids where each is connected by a peptide bond. Let me parse it step by step.\n\nThe molecule starts with N (maybe a t...",
+          "answer": "The molecule is a peptide.",
+          "note": "Think block is 14483 chars but answer is only 26 chars (ratio 557:1). Model generates extensive 'reasoning' to produce a memorized short template answer."
+        },
+        {
+          "line_idx": 4046,
+          "task_type": "mol_description",
+          "score": 0.9375,
+          "predicted_value": "The molecule is a peptide.",
+          "gold_value": "The molecule is a peptide.",
+          "mae": null,
+          "input": "system\nYou are an expert chemist. Given the SELFIES representation of the product, your task is to describe the molecule in natural language.\nuser\nProvide a description of this molecule.\n<SELFIES> [C][C][C@H1][Branch1][C][C][C@@H1][Branch1][=Branch1][C][=Branch1][C][=O][O][N][C][=Branch1][C][=O][C@H1][Branch1][#Branch2][C][C][=C][C][=C][C][=C][Ring1][=Branch1][N][C][=Branch1][C][=O][C@H1][Branch1]...",
+          "think": "Okay, let's see. I need to describe this molecule based on theSELFIES given. The molecule is a peptide. Let me break it down.\n\nFirst, theSELFIES code shows it's a sequence of three amino acids connected by peptide bonds. Let me parse each part.\n\nThe first part is [C][C][C@H1][Branch1][C][C][C@@H1][Branch1][=Branch1][C][=Branch1][C][=O][O][N]. That's the first amino acid, which is L-isoleucine. Wait, no—wait, the structure is: the first amino acid is the one with the N-terminal, right? Wait, in p...",
+          "answer": "The molecule is a peptide.",
+          "note": "Think block is 13753 chars but answer is only 26 chars (ratio 529:1). Model generates extensive 'reasoning' to produce a memorized short template answer."
+        },
+        {
+          "line_idx": 429,
+          "task_type": "mol_description",
+          "score": 0.9375,
+          "predicted_value": "The molecule is a sulfonamide.",
+          "gold_value": "The molecule is a sulfonamide.",
+          "mae": null,
+          "input": "system\nYou are an expert chemist. Given the SELFIES representation of the product, your task is to describe the molecule in natural language.\nuser\nPlease give me some details about this molecule.\n<SELFIES> [C][C@@H1][C][N][Branch2][Ring2][#C][C][=Branch1][C][=O][C][C][=C][Branch1][=C][C][=C][C][=Branch1][Ring2][=C][Ring1][=Branch1][N][Branch1][C][C][C][O][C@H1][Ring1][P][C][N][Branch1][C][C][S][=B...",
+          "think": "Okay, let's see. I need to describe this molecule based on theSELFIES representation provided. First, I should parse the code to understand what the molecule is.\n\nThe molecule is a sulfonamide. That's given because there's a part where it says S(=Branch1)(=Branch1)(=C)(C)(=C)(C)(=C)(Ring1)(=Branch1), which is a sulfonamide group.\n\nLooking at the structure: It's an aromatic amine. Wait, there's a nitrogen with a methyl group attached, but maybe not. Let me break it down.\n\nThe molecule has a keton...",
+          "answer": "The molecule is a sulfonamide.",
+          "note": "Think block is 13695 chars but answer is only 30 chars (ratio 456:1). Model generates extensive 'reasoning' to produce a memorized short template answer."
+        }
+      ]
+    }
+  ]
+}

@@ -16,7 +16,7 @@ JENKINS_TOKEN="1103ee8a1bc5b80a774625ae32a7ed9f34"
 
 # 基础配置 (按任务3837的参数设置)
 CLUSTER="yidian"
-WORKSPACE_ID="hs_gpu"
+WORKSPACE_ID="puyullm_gpu"
 USER="zouyicheng"
 OUTPUT_DIR="zouyicheng"
 
@@ -157,7 +157,7 @@ dict(
     ),
     query_per_second=8,
     batch_size=32,
-    temperature=0.6,
+    temperature=1.0,
     tokenizer_path='TOKENIZER_PATH_PLACEHOLDER',
     retry=10,
     max_out_len=65536,

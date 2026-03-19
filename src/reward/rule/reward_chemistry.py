@@ -139,6 +139,51 @@ def if_format_correct(thinking_content, solution_content, task_type):
     return True
 
 
+def compute_rule_score(prediction: str, reference: str, task_type: str, mae_scale: float = 1.0) -> float:
+    """
+    Compute rule-based score for a single sample.
+
+    Args:
+        prediction: Model's prediction string.
+        reference: Ground truth reference string.
+        task_type: Task type (RP, MG, FS, RS, PP, MC).
+        mae_scale: Scale factor for MAE normalization.
+
+    Returns:
+        Normalized score in [0, 1].
+    """
+    pred, ref = prediction, reference
+    try:
+        if task_type == 'PP':
+            eval_func = mae_score
+        elif task_type == 'MC':
+            eval_func = meteor_score
+            pred, ref = MC_task_format(pred, ref)
+        else:
+            eval_func = fts_score
+
+        result = eval_func(predictions=[pred], references=[ref])
+
+        if task_type == "PP":
+            score = result.get('score', float('inf'))
+        else:
+            score = result.get('score', 0.0)
+
+        normalized_score = normalize_score_to_reward(score, task_type, mae_scale=mae_scale)
+        return normalized_score
+
+    except RecursionError:
+        print(f'[WARNING] RecursionError in {task_type} evaluation. '
+              f'Assigning score=0.0. '
+              f'Prediction: {prediction[:100]}... Reference: {reference[:100]}...')
+        return 0.0
+    except Exception as e:
+        print(f'[WARNING] Unexpected error in {task_type} evaluation: {type(e).__name__}: {str(e)}. '
+              f'Assigning score=0.0. '
+              f'Prediction: {prediction[:100]}... Reference: {reference[:100]}...')
+        return 0.0
+
+
 def compute_score_batch(data_sources, solution_strs, ground_truths, extra_infos):
     """Compute scores for a batch of data using the POLAR reward model for VERL.
 

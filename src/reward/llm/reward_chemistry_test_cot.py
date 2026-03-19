@@ -33,7 +33,7 @@ judge_template = """You are an expert chemistry process evaluator.
 **CRITICAL INSTRUCTION:**
 - **DO NOT** evaluate whether the final answer is factually correct or accurate.
 - Accuracy verification is handled by external rule-based systems.
-- Your ONLY job is to evaluate: (1) CoT-Answer Consistency, (2) Output Integrity (anti-cheating), (3) CoT Completeness & Reasonableness.
+- Your ONLY job is to evaluate: Output Integrity (anti-cheating).
 
 Analyze the model's performance based strictly on the provided Rubric.
 If the model MEETS ALL the criteria described in the rubric, the result must be True.
@@ -42,7 +42,6 @@ If the model FAILS ANY of the criterion, the result must be False.
 **Boundary Case Handling:**
 If ANY of the following boundary cases occur, the result must be **False**:
 - The Model Final Answer is absent, empty, or consists only of generic filler text.
-- The Chain of Thought is absent, empty, or consists only of generic filler text.
 
 **Output Format:**
 Return a single JSON object:
@@ -51,29 +50,17 @@ Return a single JSON object:
 # Rubrics focus on: Consistency, Anti-cheating, CoT Completeness & Reasonableness
 # NOTE: Accuracy is NOT evaluated here - handled by external rule-based systems
 rubrics = {
-    "FS": """1. **CoT-Answer Consistency**: The final SELFIES must logically follow from the CoT conclusion. If CoT concludes X but answer gives Y, auto-fail. (Do NOT verify chemical correctness)
-2. **Anti-Cheating**: Output must NOT be copied/appended input reactants or reagents. Must show genuine transformation attempt.
-3. **CoT Completeness**: CoT must contain substantive reasoning (reaction type identification, mechanism discussion, bond changes)—not vague/generic filler text.""",
+    "FS": """Output must NOT be copied/appended input reactants or reagents. Must show genuine transformation attempt.""",
 
-    "RP": """1. **CoT-Answer Consistency**: The final SELFIES reagents must logically follow from the CoT conclusion. Contradictions auto-fail. (Do NOT verify if reagents are correct)
-2. **Anti-Cheating**: Output must NOT be copied/appended input reactants or target product. Must show genuine prediction attempt.
-3. **CoT Completeness**: CoT must analyze the transformation and provide reasoning for reagent selection—not vague/generic filler text.""",
+    "RP": """Output must NOT be copied/appended input reactants or target product. Must show genuine prediction attempt.""",
 
-    "RS": """1. **CoT-Answer Consistency**: Final reactants/reagents must logically follow from CoT conclusion. Contradictions auto-fail. (Do NOT verify if retrosynthesis is correct)
-2. **Anti-Cheating**: Output must NOT be copied/appended input product. Must show genuine retrosynthesis attempt.
-3. **CoT Completeness**: CoT must contain retrosynthetic reasoning (disconnection analysis, synthon discussion)—not vague/generic filler text.""",
+    "RS": """Output must NOT be copied/appended input product. Must show genuine retrosynthesis attempt.""",
 
-    "MG": """1. **CoT-Answer Consistency**: Final SELFIES must match the structure described in CoT conclusion. Contradictions auto-fail. (Do NOT verify if SELFIES is chemically correct)
-2. **Anti-Cheating**: Output must be a SELFIES string—not copied input natural language text or generic filler.
-3. **CoT Completeness**: CoT must systematically analyze input description (identifying rings, groups, heteroatoms)—not vague/generic filler text.""",
+    "MG": """Output must be a SELFIES string—not copied input natural language text or generic filler.""",
 
-    "PP": """1. **CoT-Answer Consistency**: Final \\boxed{{}} value must align with CoT's estimation/trend. Contradictions auto-fail. (Do NOT verify if the value is accurate)
-2. **Anti-Cheating**: CoT must reference input molecule's structural features—not arbitrary number without any reasoning attempt.
-3. **CoT Completeness**: CoT must contain Structure-Property Relationship analysis (discussing relevant structural factors)—not vague/generic filler text.""",
+    "PP": """CoT must reference input molecule's structural features—not arbitrary number without any reasoning attempt.""",
 
-    "MC": """1. **CoT-Answer Consistency**: Final description must align with structural features identified in CoT. Contradictions auto-fail. (Do NOT verify factual accuracy)
-2. **Anti-Cheating**: Output must contain specific useful information—not generic boilerplate text or repetitive padding.
-3. **CoT Completeness**: CoT must parse the input SELFIES and identify substructures (rings, groups, heteroatoms)—not vague/generic filler text."""
+    "MC": """Output must contain specific useful information—not generic boilerplate text or repetitive padding."""
 }
 
 

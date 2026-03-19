@@ -211,3 +211,9 @@ outputs/
 
 # vscode
 .vscode/
+
+# directories
+
+data
+
+opencompass
