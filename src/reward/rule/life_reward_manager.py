@@ -67,6 +67,7 @@ def _life_compute_score(
         return {
             "score": -1.0,
             "rule_score": None,
+            "task_name": task_name,
         }
 
     # Strip residual </think> from solution
@@ -79,6 +80,7 @@ def _life_compute_score(
         return {
             "score": rule_score,
             "rule_score": rule_score,
+            "task_name": task_name,
         }
     except Exception as e:
         print(
@@ -88,6 +90,7 @@ def _life_compute_score(
         return {
             "score": -1.0,
             "rule_score": None,
+            "task_name": task_name,
         }
 
 

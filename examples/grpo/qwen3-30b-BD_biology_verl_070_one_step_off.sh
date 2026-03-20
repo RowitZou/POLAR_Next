@@ -10,11 +10,11 @@ set -x
 
 # Parameters from original script
 nodes=8
-train_batch_size=128
+train_batch_size=512
 actor_lr=1e-6
-data_name=material
-policy_model_name=Qwen3-30B-A3B-TD
-reward_model_name=RULE_LLM_JUDGE_V2
+data_name=biology
+policy_model_name=Qwen3-30B-A3B-BD
+reward_model_name=RULE
 env_name=verl_070_one_step_off
 
 # GPU split per node (must sum to 8)
@@ -22,14 +22,14 @@ n_gpus_rollout=4
 n_gpus_training=4
 
 # Model paths
-actor_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR/outputs/sft/Material-Qwen3_30B_A3_instruct-general-continue-single/20260316102736/hf-latest
+actor_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR/outputs/sft/Life-Qwen3_30B_A3_instruct-general-continue-single/20260316141603/hf-latest
 
 # Data paths
-train_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/material/train/train.parquet
-test_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/material/train/train.parquet
+train_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/life/train/train.parquet
+test_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/life/train/train.parquet
 
 # Reward Configuration - absolute path required (script cd's into verl/)
-reward_manager_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/src/reward/mix_env/material_reward_manager_v2.py
+reward_manager_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/src/reward/rule/life_reward_manager.py
 
 # Experiment name
 name="verl_grpo_policy_${policy_model_name}_reward_${reward_model_name}_data_${data_name}_ENV_${env_name}"
@@ -113,7 +113,7 @@ if [ "$RANK" -eq 0 ]; then
     reward_model.enable=False \
     reward_model.reward_loop_source=importlib \
     reward_model.reward_loop_module_path=$reward_manager_path \
-    reward_model.reward_loop_class_name=MaterialRewardManager \
+    reward_model.reward_loop_class_name=LifeRewardManager \
     +reward_model.max_concurrent=4096 \
     +reward_model.timeout=3600 \
     \
@@ -121,11 +121,11 @@ if [ "$RANK" -eq 0 ]; then
     trainer.nnodes=$nodes \
     trainer.critic_warmup=0 \
     trainer.logger='["console","wandb"]' \
-    trainer.project_name='verl_grpo_material' \
+    trainer.project_name='verl_grpo_biology' \
     trainer.val_before_train=False \
     trainer.experiment_name="$name" \
     trainer.save_freq=20 \
-    trainer.total_epochs=20 \
+    trainer.total_epochs=1 \
     trainer.test_freq=-1 \
     trainer.max_actor_ckpt_to_keep=2 \
     trainer.max_critic_ckpt_to_keep=2 \

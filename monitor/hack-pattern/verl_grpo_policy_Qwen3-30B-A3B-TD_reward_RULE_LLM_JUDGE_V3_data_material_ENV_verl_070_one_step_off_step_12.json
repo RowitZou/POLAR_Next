@@ -1,0 +1,161 @@
+{
+  "experiment": "verl_grpo_policy_Qwen3-30B-A3B-TD_reward_RULE_LLM_JUDGE_V3_data_material_ENV_verl_070_one_step_off",
+  "analysis_step": 12,
+  "total_steps_available": 12,
+  "total_samples": 1024,
+  "analysis_date": "2026-03-20",
+  "v3_change_summary": "V3 adds zero-prediction penalty: for regression tasks (matbench_expt_gap, matbench_steels), if gold value is non-zero but model predicts 0, score is set to 0.0 directly instead of MAE-based reward.",
+
+  "overall_metrics": {
+    "mean_score": 0.383,
+    "step_1_mean_score": 0.355,
+    "score_trend": "slight improvement from 0.355 (step 1) to 0.383 (step 12)"
+  },
+
+  "v3_zero_prediction_penalty_effectiveness": {
+    "status": "EFFECTIVE — zero-bias hack significantly reduced",
+    "v2_step_320_wrong_zero_rate": "19.2% (40/208 non-zero-gold samples)",
+    "v2_step_336_wrong_zero_rate": "33.6% (worsening trend)",
+    "v3_step_1_wrong_zero_rate": "0.0% (0/189 non-zero-gold samples)",
+    "v3_step_12_wrong_zero_rate": "1.5% (3/199 non-zero-gold samples)",
+    "penalty_applied_correctly": "All 3 wrong-zero cases in step 12 received score=0.0 with V3 penalty",
+    "conclusion": "V3 零预测惩罚机制成功将 wrong-zero rate 从 V2 的 33.6% 降至 1.5%，惩罚判定准确无误。模型基本不再采用 '预测0' 作为安全默认策略。"
+  },
+
+  "new_dominant_issue_rubric_failures": {
+    "status": "CRITICAL — anti-fabrication rubrics are the main score suppressor now",
+    "description": "With zero-bias largely fixed, the dominant issue is massive rubric failure rates, especially for band gap and glass tasks. The model is still generating fabricated citations, DFT claims, and experimental evidence in its answers.",
+
+    "rubric_failure_rates_by_task_step12": {
+      "matbench_expt_gap": {
+        "total": 344,
+        "rubric_fail": 285,
+        "rubric_fail_rate": "82.8%",
+        "both_rubrics_fail": 173,
+        "anti_citation_fail_only": 16,
+        "anti_evidence_fail_only": 96,
+        "both_pass": 59,
+        "note": "Band gap is the hardest-hit task; 82.8% of samples get score=0 due to rubric failures despite many having good LLM scores"
+      },
+      "matbench_expt_is_metal": {
+        "total": 344,
+        "rubric_fail": 40,
+        "rubric_fail_rate": "11.6%",
+        "note": "Relatively healthy; 86.9% of legit-scored samples achieve high score"
+      },
+      "matbench_glass": {
+        "total": 320,
+        "rubric_fail": 164,
+        "rubric_fail_rate": "51.2%",
+        "note": "About half of samples fail rubric checks"
+      },
+      "matbench_steels": {
+        "total": 16,
+        "rubric_fail": 9,
+        "rubric_fail_rate": "56.3%",
+        "note": "Small sample size; mostly anti-evidence failures"
+      }
+    },
+
+    "rubric_failure_trend": {
+      "matbench_expt_gap": "Stable at 73-83% across all 12 steps — model did NOT learn to avoid fabrications",
+      "matbench_expt_is_metal": "Improved from 19.6% (step 1) to 11.6% (step 12)",
+      "matbench_glass": "Slight improvement from 54.8% (step 1) to 51.2% (step 12)"
+    },
+
+    "fabrication_patterns_in_answers_bandgap": {
+      "journal_name_mentions": "50.5% of rubric-failed samples",
+      "dft_claims": "18.9%",
+      "et_al_citations": "7.0%",
+      "experimental_claims": "6.3%",
+      "doi_links": "5.6%",
+      "numbered_citations": "1.1%",
+      "specific_database": "0.7%",
+      "note": "Many samples contain journal name references ('Physical Review', 'J. Phys.', etc.) and DFT computational claims in the answer text, triggering rubric failures even when the actual numeric prediction is accurate."
+    },
+
+    "key_observation": "许多 band gap 样本的实际数值预测是准确的（如 pred=2.40 vs gold=2.38, llm_score=0.98），但因为 answer 中包含伪造引用或计算证据而被 rubric 判为 0 分。模型在 12 步训练中并未学会在 answer 中避免这些伪造内容。这说明 rubric 的惩罚信号虽然准确，但训练步数太少(仅12步)，模型还没有足够的训练信号来调整生成策略。"
+  },
+
+  "per_task_analysis": {
+    "matbench_expt_gap": {
+      "total": 344,
+      "mean_score": 0.070,
+      "legit_scored": 59,
+      "legit_mean_score": 0.410,
+      "high_score_among_legit": "28.8% (17/59)",
+      "pred_zero_total": 104,
+      "gold_zero_total": 145,
+      "wrong_zero": 3,
+      "wrong_zero_rate": "1.5%",
+      "format_fail": 0,
+      "diagnosis": "得分极低主要因为 82.8% 的样本被 rubric 判为 0 分。仅 17.1% 的样本通过 rubric 且获得有效分数，其中 legit 均分 0.41，高分率 28.8%。V3 零惩罚有效但占比极小(仅3例)。主要瓶颈是伪造内容生成。"
+    },
+    "matbench_expt_is_metal": {
+      "total": 344,
+      "mean_score": 0.735,
+      "legit_scored": 298,
+      "legit_mean_score": 0.869,
+      "high_score_among_legit": "86.9% (259/298)",
+      "rubric_fail": 40,
+      "rubric_fail_rate": "11.6%",
+      "format_fail": 6,
+      "diagnosis": "表现最好的任务。rubric 失败率低(11.6%)，legit 样本中高分率 86.9%。从 step 1 的 0.583 提升到 step 12 的 0.735，说明模型在分类任务上有明显学习进步。"
+    },
+    "matbench_glass": {
+      "total": 320,
+      "mean_score": 0.350,
+      "legit_scored": 156,
+      "legit_mean_score": 0.718,
+      "high_score_among_legit": "71.8% (112/156)",
+      "rubric_fail": 164,
+      "rubric_fail_rate": "51.2%",
+      "diagnosis": "Rubric 失败率 51.2%，约一半样本被惩罚。Legit 样本中高分率 71.8%，说明当不伪造时模型预测能力不错。Anti-citation rubric 失败是主因(占 rubric 失败的 64/164=39% 为仅 citation 失败)。"
+    },
+    "matbench_steels": {
+      "total": 16,
+      "mean_score": 0.205,
+      "legit_scored": 7,
+      "legit_mean_score": 0.469,
+      "rubric_fail": 9,
+      "rubric_fail_rate": "56.3%",
+      "diagnosis": "样本量极小(16)，不具统计意义。Rubric 失败以 anti-evidence 为主。"
+    }
+  },
+
+  "think_length_analysis": {
+    "step_1": {"mean_think_chars": 6002, "median_think_chars": 3023, "mean_answer_chars": 2588},
+    "step_6": {"mean_think_chars": 6291, "median_think_chars": 3053, "mean_answer_chars": 2525},
+    "step_12": {"mean_think_chars": 5799, "median_think_chars": 3121, "mean_answer_chars": 2645},
+    "trend": "Think 长度基本稳定(~6K chars)，未出现 V2 中观察到的 think 压缩现象（V2 从 26.5K 降到 10.2K）。"
+  },
+
+  "fabricated_citations_in_whole_output": {
+    "step_12_citations_in_answer": "18.7% (190/1018)",
+    "step_12_citations_in_think": "3.5% (36/1018)",
+    "comparison_with_v2": "V2 step 320 citations in answer 0.1%, in think 65%. V3 的情况完全反转：answer 中反而有更多引用(18.7%)，think 中大幅减少(3.5%)。这是因为 V3 训练目前仅 12 步，模型还没有从 cold start 阶段学到避免在 answer 中放引用。V2 是经过 320+ 步训练后才压制了 answer 中的引用。"
+  },
+
+  "comparison_with_v2": {
+    "zero_bias_hack": "V3 ✅ 基本修复 (1.5% vs V2 33.6%)",
+    "fabricated_citations_in_answer": "V3 ❌ 18.7% (V2 0.1%) — V3 训练步数太少，模型还没学会避免",
+    "fabricated_evidence_in_answer": "V3 ❌ 高频出现 — 同上",
+    "rubric_failure_rate_bandgap": "V3 82.8% — 需要更多训练步数来降低",
+    "overall_mean_score": "V3 step 12: 0.383 vs V2 step 320: 0.821 — V3 分数低是因为训练初期，不能直接比较",
+    "metal_classification": "V3 step 12 已达 0.735，接近 V2 step 320 的高水平"
+  },
+
+  "conclusions": [
+    "1. V3 零预测惩罚机制验证有效：wrong-zero rate 从 V2 的 33.6% 骤降至 1.5%，所有 wrong-zero 案例都被正确惩罚为 0 分。",
+    "2. 当前主要瓶颈是 rubric 失败率过高(band gap 82.8%)，原因是模型在 answer 中仍大量生成伪造引用(50.5%)和伪造 DFT 证据(18.9%)。",
+    "3. 这不代表 rubric 设计有问题 — V2 经过 300+ 步后成功将 answer 中的引用率降至 0.1%。V3 仅训练了 12 步，模型尚处于 cold start 初期，还没有足够的训练信号来调整生成策略。",
+    "4. Metal 分类任务进展良好(0.735)，rubric 失败率仅 11.6%，说明分类任务学习效率更高。",
+    "5. 建议：继续训练至 100+ 步后再评估 rubric 失败率是否下降。如果长期不下降，可考虑减轻 rubric 惩罚强度(如从 0.0 调为保留部分 llm_score)。"
+  ],
+
+  "recommendations": [
+    "继续训练：V3 仅 12 步，需要更多训练来观察 rubric 失败率是否随训练逐步下降",
+    "重点监控 band gap rubric 失败率：若 100 步后仍 >50%，考虑调整 rubric 惩罚策略",
+    "可选优化：将 rubric 惩罚从 0.0(全罚) 改为 llm_score * 0.5(半罚)，提供更平滑的梯度信号"
+  ]
+}

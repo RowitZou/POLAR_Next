@@ -14,7 +14,7 @@ train_batch_size=128
 actor_lr=1e-6
 data_name=material
 policy_model_name=Qwen3-30B-A3B-TD
-reward_model_name=RULE_LLM_JUDGE_V2
+reward_model_name=RULE_LLM_JUDGE_V3
 env_name=verl_070_one_step_off
 
 # GPU split per node (must sum to 8)
@@ -29,7 +29,7 @@ train_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/mat
 test_data_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/data/material/train/train.parquet
 
 # Reward Configuration - absolute path required (script cd's into verl/)
-reward_manager_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/src/reward/mix_env/material_reward_manager_v2.py
+reward_manager_path=/mnt/shared-storage-user/ailab-hs/zouyicheng/POLAR_Next/src/reward/mix_env/material_reward_manager_v3.py
 
 # Experiment name
 name="verl_grpo_policy_${policy_model_name}_reward_${reward_model_name}_data_${data_name}_ENV_${env_name}"

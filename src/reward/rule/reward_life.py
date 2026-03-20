@@ -16,6 +16,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 
 from utils.life.eval import (  # noqa: E402
+    TASK_TO_ERROR_SCALE,
     TASK_TO_METRIC,
     acc_score,
     auc_score,
@@ -26,6 +27,37 @@ from utils.life.eval import (  # noqa: E402
     r2_score,
     spearman_score,
 )
+
+# ── Ground truth parsing ─────────────────────────────────────────────────────
+# In verl, ground_truth from parquet is always a string.  For PCC/R2 (dict)
+# tasks, we must parse it back to a dict before passing to eval functions.
+
+def parse_ground_truth(gt_str, task_name: str):
+    """Parse ground_truth string to the appropriate Python type.
+
+    - Dict tasks (PCC, R2-dict): JSON string → dict
+    - Number tasks (Spearman, R2-scalar, Mixed): kept as string (eval does float())
+    - Other tasks (MCC, Acc, Auc, Fmax): kept as string
+    """
+    if not isinstance(gt_str, str):
+        return gt_str  # already parsed
+    # Try JSON parse — covers dict GTs serialized via json.dumps
+    # Also handles legacy Python-repr dicts via ast.literal_eval
+    s = gt_str.strip()
+    if s.startswith('{'):
+        try:
+            import json as _json
+            return _json.loads(s)
+        except Exception:
+            try:
+                import ast as _ast
+                val = _ast.literal_eval(s)
+                if isinstance(val, dict):
+                    return val
+            except Exception:
+                pass
+    return gt_str
+
 
 # ── Metric → eval function mapping ───────────────────────────────────────────
 METRIC_EVAL_FUNC = {
@@ -104,8 +136,15 @@ def compute_rule_score(prediction: str, reference, task_name: str) -> float:
     metric = resolve_metric(task_name)
     eval_func = METRIC_EVAL_FUNC[metric]
 
+    # Parse string ground truth (from parquet) to proper type
+    reference = parse_ground_truth(reference, task_name)
+
     try:
-        result = eval_func(predictions=[prediction], references=[reference])
+        # Pass task-specific error_scale for inverse-error metrics
+        kwargs = {}
+        if metric in ('PCC', 'Spearman', 'R2'):
+            kwargs['error_scale'] = TASK_TO_ERROR_SCALE.get(task_name, 1.0)
+        result = eval_func(predictions=[prediction], references=[reference], **kwargs)
         raw_score = result.get('score', 0.0)
         return normalize_score_to_reward(raw_score)
     except Exception as e:

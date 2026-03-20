@@ -241,6 +241,20 @@ TASK_TO_METRIC = {
     'Multi_sequence-sirnaEfficiency': 'Mixed',
 }
 
+# Task name → error_scale for inverse-error scoring (PCC / Spearman / R²).
+# Calibrated so that an error of ~1 std gets a reward of ~0.5.
+# Tasks not listed here default to 1.0.
+TASK_TO_ERROR_SCALE = {
+    'DNA-enhancer_activity': 1.0,      # PCC,  GT std≈1.59, range≈11
+    'RNA-CRISPROnTarget': 0.1,         # Spearman, GT std≈0.11, range≈0.66
+    'Protein-Fluorescence': 0.5,       # Spearman, GT std≈0.86, range≈2.8
+    'Protein-Stability': 0.5,          # Spearman, GT std≈0.57, range≈4.1
+    'Protein-Thermostability': 5.0,    # Spearman, GT std≈5.58, range≈25
+    'RNA-Isoform': 0.3,                # R², GT std≈0.30, range≈1.0
+    'RNA-MeanRibosomeLoading': 1.0,    # R², GT std≈1.00, range≈6.1
+    'RNA-ProgrammableRNASwitches': 0.3, # R², GT std≈0.30, range≈1.0
+}
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # Statistical / metric computation helpers (same as OpenCompass biodata.py)
@@ -685,33 +699,48 @@ def acc_score(predictions, references):
 
 
 def fmax_score(predictions, references, ec_labels=None):
-    """Fmax tasks (EC number prediction) — per-sample F1 via count_f1_max.
+    """Fmax tasks (EC number prediction) — hierarchical prefix matching.
 
-    Extraction: ``\\boxed{EC numbers}``
-    Per-sample: F1-max × 100.  Range [0, 100].
+    Each EC number has 4 levels (e.g. ``1.3.8.-``).  For each GT EC,
+    we find the best-matching predicted EC by prefix:
+      - 0 levels match → 0
+      - 1 level  match → 0.25
+      - 2 levels match → 0.50
+      - 3 levels match → 0.75
+      - 4 levels match → 1.00
+
+    Final score = average best-match across GT ECs × 100.
     """
-    if ec_labels is None:
-        ec_labels = EC_LABELS
-
     details = []
     for pred, ans in zip(predictions, references):
         pred_text = extract_boxed_text(pred)
         if not pred_text:
-            result_ec = []
+            pred_ecs = []
         else:
-            result_ec = re.findall(r'\d+\.\d+\.\d+\.\-?\d*', pred_text)
-        label_ec = re.findall(r'\d+\.\d+\.\d+\.\-?\d*', str(ans))
+            pred_ecs = re.findall(r'\d+\.\d+\.\d+\.\-?\d*', pred_text)
+        gt_ecs = re.findall(r'\d+\.\d+\.\d+\.\-?\d*', str(ans))
 
-        pred_multihot = ec_to_multihot(result_ec, ec_labels)
-        label_multihot = ec_to_multihot(label_ec, ec_labels)
+        if not gt_ecs:
+            details.append({'pred': pred_text, 'answer': ans, 'score': 0.0})
+            continue
 
-        cur_f1 = count_f1_max(
-            torch.stack([pred_multihot]),
-            torch.stack([label_multihot]),
-        )
-        if isinstance(cur_f1, torch.Tensor):
-            cur_f1 = cur_f1.item()
-        sample_score = cur_f1 * 100.0
+        # For each GT EC, find the best prefix match among predictions
+        gt_scores = []
+        for gt_ec in gt_ecs:
+            gt_parts = gt_ec.strip().split('.')
+            best = 0.0
+            for p_ec in pred_ecs:
+                p_parts = p_ec.strip().split('.')
+                matched = 0
+                for g, p in zip(gt_parts, p_parts):
+                    if g == p:
+                        matched += 1
+                    else:
+                        break
+                best = max(best, matched / 4.0)
+            gt_scores.append(best)
+
+        sample_score = (sum(gt_scores) / len(gt_scores)) * 100.0
         details.append({'pred': pred_text, 'answer': ans, 'score': sample_score})
 
     avg = sum(d['score'] for d in details) / len(details) if details else 0.0

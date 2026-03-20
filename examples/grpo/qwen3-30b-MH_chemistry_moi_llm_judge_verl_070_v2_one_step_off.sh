@@ -41,8 +41,8 @@ mkdir -p $output_dir
 export TORCH_NCCL_ENABLE_MONITORING=0
 
 export WANDB_API_KEY=c89518a9cc46b986f6f2ad122a952229a76d1445
-export http_proxy=http://100.100.67.192:1082
-export https_proxy=http://100.100.67.192:1082
+export http_proxy=http://100.100.67.30:1082
+export https_proxy=http://100.100.67.30:1082
 
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False
 
